@@ -31,7 +31,7 @@ Flake FHS 提供：
 ├── profiles/   # flake-output.nixosConfigurations
 ├── shells/     # flake-output.devShells
 ├── apps/       # flake-output.apps
-├── lib/        # flake-output.lib
+├── utils/      # flake-output.lib (工具函数目录)
 ├── checks/     # flake-output.checks
 └── templates/  # flake-output.templates
 ```
@@ -63,7 +63,7 @@ Flake FHS 建立了文件系统到 flake outputs 的直接映射关系：
 | `apps/<name>/default.nix`      | `apps.<system>.<name>`                       | `nix run .#<name>`                 |
 | `shells/<name>.nix` | `devShells.<system>.<name>`                  | `nix develop .#<name>`             |
 | `templates/<name>/`    | `templates.<name>`                           | `nix flake init --template <url>#<name>` |
-| `lib/<name>.nix`       | `lib.<name>`                                 | `nix eval .#lib.<name>`            |
+| `utils/<name>.nix`      | `lib.<name>`                                 | `nix eval .#lib.<name>`            |
 | `checks/<name>.nix`       | `checks.<system>.<name>`                                 | `nix flake check .#<name>`            |
 
 ---
@@ -95,7 +95,7 @@ Flake FHS 提供了三种模板来快速启动不同类型的项目：
 - 包定义示例 (`pkgs/hello/`)
 - 多种开发环境 (`shells/`)
 - 应用程序示例 (`apps/greeting/`)
-- 工具函数库 (`lib/utils/`)
+- 工具函数库 (`utils/`)
 
 ### 🏗️ package-module
 适合 NixOS 模块开发，展示模块化设计：
@@ -139,7 +139,7 @@ nix develop
 # 运行应用
 nix run .#greeting
 
-# 查看工具函数
+# 查看工具函数（从 utils/ 目录加载）
 nix eval .#lib.utils.strings.camelCase --apply 'f: f "hello-world"'
 ```
 

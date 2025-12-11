@@ -223,7 +223,7 @@ rec {
         let
           context = systemContext' args.self "x86_64-linux";
         in
-        unionFor (discoverComponents' "lib") (
+        unionFor (discoverComponents' "utils") (
           { name, path, ... }:
           {
             "${name}" = import path context;

@@ -18,7 +18,7 @@ Flake FHS 建立了文件系统到 flake outputs 的直接映射关系：
 | `apps/<name>/default.nix`      | `apps.<system>.<name>`                       | `nix run .#<name>`                 |
 | `shells/<name>.nix` | `devShells.<system>.<name>`                  | `nix develop .#<name>`             |
 | `templates/<name>/`    | `templates.<name>`                           | `nix flake init --template <url>#<name>` |
-| `lib/<name>.nix`       | `lib.<name>`                                 | `nix eval .#lib.<name>`            |
+| `utils/<name>.nix`      | `lib.<name>`                                 | `nix eval .#lib.<name>`            |
 | `checks/<name>.nix`       | `checks.<system>.<name>`                                 | `nix flake check .#<name>`            |
 
 ### ✨ 核心特性
@@ -485,14 +485,14 @@ nix flake init --template .#rust-cli
 nix flake show --templates
 ```
 
-## 🛠️ lib/ - 辅助函数库
+## 🛠️ utils/ - 辅助函数库
 
-`lib/` 目录定义可在其他地方引用的辅助函数和工具。
+`utils/` 目录定义可在其他地方引用的辅助函数和工具。
 
 ### 目录结构
 
 ```
-lib/
+utils/
 ├── utils.nix
 ├── builders.nix
 └── helpers.nix
@@ -501,7 +501,7 @@ lib/
 ### 函数库示例
 
 ```nix
-# lib/utils.nix
+# utils/utils.nix
 { lib }:
 
 {
@@ -542,7 +542,7 @@ nix eval .#lib.utils.strings.camelCase --apply 'f: f "hello-world"'
 
 # 在其他文件中使用
 # 在 package.nix 中：
-# utils = import ../../lib { inherit lib; };
+# utils = import ../../utils { inherit lib; };
 ```
 
 ## ✅ checks/ - 检查和测试
