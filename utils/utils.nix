@@ -1,80 +1,80 @@
 # Chainable utils preparation system
-# Provides a hierarchical API for loading utils based on dependency levels
+# Directly adapted from ~/ws/nixos/tools/default.nix pattern
+# With flattening for Level 2 modules
 
 let
-  # Helper to load all .nix files from a directory (excluding .fun.nix and utils.nix files)
-  loadModulesFromDir = dir:
+  inherit (import ./list.nix) concatMap for;
+  inherit (import ./dict.nix) unionFor;
+
+  # Find files with specific postfix
+  hasPostfix = postfix: path:
+    builtins.match ".*\\.${postfix}$" (builtins.baseNameOf path) != null;
+
+  # Find files in directory, excluding subdirectories and utils.nix
+  findFiles = pred: dir:
     let
       dirContent = builtins.readDir dir;
-      nixFiles = builtins.filter (name:
-        dirContent.${name} == "regular" &&
-        builtins.match ".*\\.nix$" name != null &&
-        builtins.match ".*\\.fun\\.nix$" name == null &&
-        name != "utils.nix"  # Exclude utils.nix itself
+      regularFiles = builtins.filter (name:
+        dirContent.${name} == "regular" && name != "utils.nix"
       ) (builtins.attrNames dirContent);
     in
-    builtins.listToAttrs (
-      builtins.map (name: {
-        name = builtins.replaceStrings [".nix"] [""] name;
-        value = import (dir + "/${name}");
-      }) nixFiles
-    );
+    builtins.filter (path: pred path) (map (name: dir + "/${name}") regularFiles);
 
 in
 {
   # Main prepareUtils function
   prepareUtils = utilsPath:
     let
-      # Load Level 1 modules (builtins only) - no initialization needed
-      level1Modules = loadModulesFromDir utilsPath;
+      # Level 1: builtins-only modules (current directory)
+      # Handle both direct exports and functions
+      level1 =
+        let
+          modules = findFiles (hasPostfix "nix") utilsPath;
+          # For each module, import it. If it's a function, call it with {}
+          processModule = path:
+            let module = import path;
+            in if builtins.isFunction module then module {} else module;
+          # Merge all module exports
+          mergeModules = modules:
+            builtins.foldl' (acc: module: acc // (processModule module)) {} modules;
+        in
+        mergeModules modules;
 
       # Check if more directory exists
       morePath = utilsPath + "/more";
       hasMore = builtins.pathExists morePath;
-
-      # Create the Level 1 utils object
-      level1Utils = level1Modules // {
-        # more() method to access Level 2 with lib args
-        more = libArgs:
-          let
-            # Load Level 2 modules (lib dependent)
-            level2Modules = if hasMore then loadModulesFromDir morePath else {};
-
-            # Check if more/more directory exists
-            moreMorePath = morePath + "/more";
-            hasMoreMore = builtins.pathExists moreMorePath;
-
-            # Initialize Level 2 modules with lib args
-            initializedLevel2 = builtins.mapAttrs (name: module:
-              if builtins.isFunction module then
-                module libArgs
-              else
-                module
-            ) level2Modules;
-
-            # Create the Level 2 utils object
-            level2Utils = initializedLevel2 // {
-              # more() method to access Level 3 with pkgs args
-              more = pkgsArgs:
-                let
-                  # Load Level 3 modules (lib and pkgs dependent)
-                  level3Modules = if hasMoreMore then loadModulesFromDir moreMorePath else {};
-
-                  # Initialize Level 3 modules with both lib and pkgs args
-                  initializedLevel3 = builtins.mapAttrs (name: module:
-                    if builtins.isFunction module then
-                      module (libArgs // pkgsArgs)
-                    else
-                      module
-                  ) level3Modules;
-
-                in
-                initializedLevel3;
-            };
-
-          in
-          level2Utils;
-      };
     in
-    level1Utils;
+    level1 // {
+      # more() method to access Level 2 and Level 3 (renamed from useLib)
+      more = libArgs:
+        let
+          # Level 2: lib-dependent modules (flatten them like useLib in original)
+          level2 = if hasMore then
+            unionFor (findFiles (hasPostfix "nix") morePath) (fname:
+              let result = import fname libArgs;
+              in if builtins.isAttrs result then result else { "${builtins.replaceStrings [".nix"] [""] (builtins.baseNameOf fname)}" = result; }
+            )
+          else {};
+
+          # Check if more/more directory exists
+          moreMorePath = morePath + "/more";
+          hasMoreMore = builtins.pathExists moreMorePath;
+        in
+        level2 // {
+          # more() method to access Level 3 (renamed from usePkgs)
+          more = pkgsArgs:
+            if hasMoreMore then
+              let
+                allArgs = libArgs // pkgsArgs;
+                # Import Level 3 modules without flattening - keep filename as key
+                importLevel3 = path:
+                  let
+                    basename = builtins.replaceStrings [".nix"] [""] (builtins.baseNameOf path);
+                  in
+                  { "${basename}" = import path allArgs; };
+              in
+              unionFor (findFiles (hasPostfix "nix") moreMorePath) importLevel3
+            else {};
+        };
+    };
 }
