@@ -27,7 +27,7 @@ in
     let
       fhsModule = import ./fhs.fun.nix {
         inherit (args) lib nixpkgs inputs;
-        tools' = basicTools // { inherit useLib; };
+        utils' = basicTools // { inherit useLib; };
       };
     in
     fhsModule.mkFlake (args // {

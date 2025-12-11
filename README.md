@@ -81,7 +81,7 @@ Flake FHS 建立了文件系统到 flake outputs 的直接映射关系：
 
 本项目是 Flake FHS 的核心实现，只包含框架代码：
 
-- `tools/` - 核心工具函数库（从 `~/ws/nixos/tools/` 搬运）
+- `utils/` - 核心工具函数库（从 `~/ws/nixos/tools/` 搬运）
 - `flake.nix` - 包含 `mkFlake` 函数的主要实现
 - `templates/` - 项目模板集合
 - `docs/` - 详细文档和手册

@@ -3,14 +3,14 @@
 
 {
   # Import other tool functions
-  tools',
+  utils',
   lib,
   nixpkgs,
   inputs ? {}
 }:
 
 let
-  inherit (tools')
+  inherit (utils')
     for
     unionFor
     dict
@@ -29,7 +29,7 @@ let
       inherit system;
       config.allowUnfree = true;
     };
-    tools = tools' // tools'.useLib lib;
+    tools = utils' // utils'.useLib lib;
     specialArgs = {
       self = selfArg;
       inherit
@@ -76,7 +76,7 @@ rec {
           inherit system;
           config = nixpkgsConfig;
         };
-        tools = tools' // tools'.useLib lib;
+        tools = utils' // utils'.useLib lib;
         specialArgs = {
           self = selfArg;
           inherit
@@ -244,7 +244,7 @@ rec {
       # Auto-generated overlay for packages
       overlays.default = final: prev:
         let
-          context = { pkgs = final; inherit (final) lib; tools = tools' // tools'.useLib final.lib; };
+          context = { pkgs = final; inherit (final) lib; tools = utils' // utils'.useLib final.lib; };
         in
         buildPackages' context;
 

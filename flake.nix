@@ -8,13 +8,13 @@
 
   outputs = inputs@{ self, nixpkgs, flake-utils, ... }:
     let
-      # Import tools which includes mkFlake function
-      tools = import ./tools;
+      # Import utils which includes mkFlake function
+      utils = import ./utils;
       lib = nixpkgs.lib;
     in
     rec {
       # Main mkFlake function - available as both a flake output and for direct use
-      inherit (tools) mkFlake;
+      inherit (utils) mkFlake;
 
       # Templates are manually defined for now
       templates.simple-project = {
