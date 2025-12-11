@@ -20,6 +20,7 @@ let
     isNotHidden
     lsDirs
     lsFiles
+    concatMap
     ;
 
   # System context helper
@@ -94,38 +95,50 @@ rec {
 
       # Updated component discovery that respects multiple roots
       discoverComponents' = componentType:
-        unionFor roots (root:
-          let
-            componentPath = root + "/${componentType}";
-          in
-          if builtins.pathExists componentPath then
-            for (lsDirs componentPath) (name: {
-              inherit name root;
-              path = componentPath + "/${name}";
-            })
-          else
-            []
-        );
+        let
+          # Collect components from all roots as a flat list
+          allComponents =
+            concatMap (root:
+              let
+                componentPath = root + "/${componentType}";
+              in
+              if builtins.pathExists componentPath then
+                for (lsDirs componentPath) (name: {
+                  inherit name root;
+                  path = componentPath + "/${name}";
+                })
+              else
+              []
+            ) roots;
+        in
+        allComponents;
 
       # Package discovery with optional default.nix control
       buildPackages' = context:
         let
           components = discoverComponents' "pkgs";
           # Check if any pkgs/default.nix exists in roots
-          defaultPkgs = unionFor roots (root:
-            let
-              defaultPath = root + "/pkgs/default.nix";
-            in
-            if builtins.pathExists defaultPath then [ (import defaultPath context) ] else []
-          );
+          hasDefault = builtins.any (root: builtins.pathExists (root + "/pkgs/default.nix")) roots;
         in
-        if defaultPkgs != [] then
+        if hasDefault then
           # Use default.nix to control package visibility
+          let
+            defaultPkgs = concatMap (root:
+              let
+                defaultPath = root + "/pkgs/default.nix";
+              in
+              if builtins.pathExists defaultPath then
+                let result = import defaultPath context;
+                in if builtins.isAttrs result then [result] else []
+              else []
+            ) roots;
+          in
+          # Merge all package sets from default.nix files
           builtins.foldl' (acc: pkgs: acc // pkgs) {} defaultPkgs
         else
           # Auto-discover all packages
-          unionFor components (
-            { name, path, ... }:
+          dict components (name:
+            { path, ... }:
             {
               "${name}" = context.pkgs.callPackage (path + "/package.nix") { };
             }
