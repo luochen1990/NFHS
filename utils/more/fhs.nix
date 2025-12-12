@@ -220,48 +220,43 @@ in
       checks = eachSystem (
         context:
         let
-          # Find all check files (like packages)
-          checkFiles = concatMap (
+          # 1. File mode: collect top-level .nix files
+          fileChecks = concatMap (
             root:
-            let
-              checksPath = root + "/checks";
-            in
-            if builtins.pathExists checksPath then
+            let checksPath = root + "/checks";
+            in if builtins.pathExists checksPath then
               for (utils.lsFiles checksPath) (name:
-                let
-                  checkPath = checksPath + "/${name}";
-                in
-                if builtins.match ".*\\.nix$" name != null && name != "default.nix" then {
-                  # Remove .nix suffix for attribute name
+                let checkPath = checksPath + "/${name}";
+                in if builtins.match ".*\\.nix$" name != null && name != "default.nix" then {
                   name = builtins.substring 0 (builtins.stringLength name - 4) name;
-                  type = "file";
                   path = checkPath;
                 } else null
               )
-            else
-              [ ]
+            else [ ]
           ) roots;
 
-          # Filter out nulls
-          validCheckFiles = builtins.filter (x: x != null) checkFiles;
+          validFileChecks = builtins.filter (x: x != null) fileChecks;
 
-          # Find all directory-based checks
-          directoryChecks = discoverComponents' "checks";
+          # 2. Directory mode: recursively find all directories containing default.nix
+          directoryChecks = concatMap (
+            root:
+            let checksPath = root + "/checks";
+            in if builtins.pathExists checksPath then
+              for (utils.findSubDirsContains checksPath "default.nix") (relativePath: {
+                name = builtins.replaceStrings ["/"] ["-"] relativePath;
+                path = checksPath + "/${relativePath}";
+              })
+            else [ ]
+          ) roots;
 
-          # Convert directory checks to include type field
-          typedDirectoryChecks = map (comp: comp // { type = "directory"; }) directoryChecks;
-
-          # Combine file and directory checks, files take precedence on name conflicts
+          # 3. File mode takes precedence over directory mode on name conflicts
           allChecks =
             let
-              fileNames = builtins.attrNames (builtins.listToAttrs (map (item: { name = item.name; value = item; }) validCheckFiles));
-              # Filter out directories that conflict with files
-              nonConflictingDirs = builtins.filter (comp: !(builtins.elem comp.name fileNames)) typedDirectoryChecks;
+              fileNames = map (item: item.name) validFileChecks;
             in
-            validCheckFiles ++ nonConflictingDirs;
+            validFileChecks ++ builtins.filter (dir: !(builtins.elem dir.name fileNames)) directoryChecks;
 
         in
-        # Generate all checks (both files and directories)
         builtins.listToAttrs (map (item: {
           name = item.name;
           value = import item.path context;
