@@ -1,6 +1,6 @@
 # Nix FHS 使用手册
 
-Nix FHS 是一个约定优于配置的 Nix flakes 项目结构框架，它通过标准化的目录结构自动生成 flake outputs，让开发者专注于业务逻辑而非配置管理。
+Nix FHS 是一个 Nix flakes 项目结构框架，它通过标准化的目录结构自动生成 flake outputs，让开发者专注于业务逻辑而非配置管理。
 
 ## 🚀 快速开始
 
@@ -24,9 +24,8 @@ Nix FHS 建立了文件系统到 flake outputs 的直接映射关系：
 ### ✨ 核心特性
 
 - **自动发现**：所有 `<name>` 来自文件/目录名，无需手动声明
-- **跨平台支持**：`<system>` 根据配置自动生成，默认使用当前系统平台
-- **零配置映射**：所有映射关系由 Nix FHS 自动完成
-- **约定优于配置**：遵循 Nixpkgs 的最佳实践和目录结构
+- **支持多种命名风格**：支持 `packages`, `devShells` 这样跟 flake output 1:1 的子目录命名，同时也支持 `pkgs`, `shells` 这样简短的子目录命名
+- **支持多个根目录**：多个根目录中的内容将由 Nix FHS 自动合并
 
 ## 📦 pkgs/ - 包定义
 
@@ -63,7 +62,7 @@ stdenv.mkDerivation {
 }
 ```
 
-### 🔐 控制包的可见性
+### 🔐 控制包的可见性 (WIP)
 
 在某些情况下，您可能希望控制哪些包对外暴露。例如，包 A 依赖 B、C、D，但您只想对外暴露包 A。
 
@@ -95,7 +94,7 @@ stdenv.mkDerivation {
 
 - 将所有子目录按照是否包含 options.nix 文件，分为 guarded (包含) 和 unguarded (不包含) 两类
 - 递归地为所有子目录生成 enable 选项, 目录路径决定 options 路径
-- 对于 unguarded 目录，默认 enable = true； 对于 guarded 目录，默认 enable = false, 你也可以在 options.nix 中手动覆盖 enable 选项的定义
+- 对于 unguarded 目录，默认 enable = true； 对于 guarded 目录，默认 enable = false, 你也可以在 options.nix 中手动覆盖 enable 选项的定义 (WIP)
 - 系统将自动导入以下模块:
   a. 所有 unguarded 子目录中的 nix 配置文件
   b. 所有 guarded 子目录中的 options.nix 配置文件
@@ -261,7 +260,7 @@ profiles/
 
 ### 📁 shared/ 目录
 
-`shared/` 是特殊目录，用于存放多个 profiles 之间共享的配置片段：
+`shared/` 用于存放多个 profiles 之间共享的配置片段：
 
 ```nix
 # profiles/shared/base-system.nix
@@ -282,14 +281,18 @@ profiles/
 }
 ```
 
+`shared/` 目录中的配置需要由用户在 configuration.nix 中手动引入.
+
+从 Nix FHS 的角度看，这个目录并不特殊，理论上你可以用任意名字的子目录来做这件事，只要不被 Nix FHS 自动发现为特殊目录即可。
+
 ### 使用方法
 
 ```bash
 # 构建桌面系统
-nixos-rebuild switch --flake .#desktop
+nixos-rebuild build --flake .#desktop
 
 # 构建服务器系统
-nixos-rebuild switch --flake .#server
+nixos-rebuild build --flake .#server
 ```
 
 **设计理念**：
