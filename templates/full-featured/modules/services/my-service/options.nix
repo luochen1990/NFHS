@@ -2,48 +2,46 @@
 
 with lib;
 {
-  options.my-service = {
-    enable = mkEnableOption "My custom service";
+  enable = mkEnableOption "My custom service";
 
-    port = mkOption {
-      type = types.port;
-      default = 8080;
-      description = "Port on which my-service should listen";
-    };
+  port = mkOption {
+    type = types.port;
+    default = 8080;
+    description = "Port on which my-service should listen";
+  };
 
-    package = mkOption {
-      type = types.package;
-      default = pkgs.hello;
-      defaultText = literalExpression "pkgs.hello";
-      description = "My service package to use";
-    };
+  package = mkOption {
+    type = types.package;
+    default = pkgs.hello;
+    defaultText = literalExpression "pkgs.hello";
+    description = "My service package to use";
+  };
 
-    user = mkOption {
-      type = types.str;
-      default = "myservice";
-      description = "User account under which the service runs";
-    };
+  user = mkOption {
+    type = types.str;
+    default = "myservice";
+    description = "User account under which the service runs";
+  };
 
-    group = mkOption {
-      type = types.str;
-      default = "myservice";
-      description = "Group under which the service runs";
-    };
+  group = mkOption {
+    type = types.str;
+    default = "myservice";
+    description = "Group under which the service runs";
+  };
 
-    openFirewall = mkOption {
-      type = types.bool;
-      default = false;
-      description = "Whether to open the configured port in the firewall";
-    };
+  openFirewall = mkOption {
+    type = types.bool;
+    default = false;
+    description = "Whether to open the configured port in the firewall";
+  };
 
-    environment = mkOption {
-      type = types.attrsOf types.str;
-      default = { };
-      example = {
-        LOG_LEVEL = "info";
-        DATA_DIR = "/var/lib/myservice";
-      };
-      description = "Environment variables for the service";
+  environment = mkOption {
+    type = types.attrsOf types.str;
+    default = { };
+    example = {
+      LOG_LEVEL = "info";
+      DATA_DIR = "/var/lib/myservice";
     };
+    description = "Environment variables for the service";
   };
 }

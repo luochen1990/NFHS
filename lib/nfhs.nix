@@ -53,15 +53,17 @@ let
       optionsModule,
     }:
     let
-      unguardedConfigPaths = concatLists (exploreDir paths (it: rec {
-        options-dot-nix = it.path + "/options.nix";
-        guarded = pathExists options-dot-nix;
-        into = !guarded;
-        pick = !guarded;
-        out = forFilter (lsFiles it.path) (
-          fname: if hasPostfix "nix" fname then (it.path + "/${fname}") else null
-        );
-      }));
+      unguardedConfigPaths = concatLists (
+        exploreDir paths (it: rec {
+          options-dot-nix = it.path + "/options.nix";
+          guarded = pathExists options-dot-nix;
+          into = !guarded;
+          pick = !guarded;
+          out = forFilter (lsFiles it.path) (
+            fname: if hasPostfix "nix" fname then (it.path + "/${fname}") else null
+          );
+        })
+      );
 
       guardedSubdirs = exploreDir paths (it: rec {
         options-dot-nix = it.path + "/options.nix";
@@ -285,17 +287,23 @@ in
             {
               name = (concatStringsSep "." it.modPath) + ".config";
               value = (
-                {
+                args@{
                   lib,
                   config,
                   ...
                 }:
+                let
+                  loadModule =
+                    path:
+                    let
+                      m = import path;
+                    in
+                    if builtins.isFunction m then m args else m;
+                in
                 {
-                  config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable lib.mkMerge ([
-                    {
-                      imports = it.unguardedConfigPaths;
-                    }
-                  ]);
+                  config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable (
+                    lib.mkMerge (map loadModule it.unguardedConfigPaths)
+                  );
                 }
               );
             }
@@ -320,23 +328,31 @@ in
                 (it.path + "/configuration.nix")
               ]
               ++ moduleSets.unguardedConfigPaths
-              ++ for moduleSets.guardedToplevelModules (
-                it:
+              ++ concatFor moduleSets.guardedToplevelModules (it: [
+                # Options module (always imported)
+                it.optionsModule
+                # Config module (guarded by enable option)
                 (
-                  {
+                  args@{
                     lib,
                     config,
                     ...
                   }:
+                  let
+                    loadModule =
+                      path:
+                      let
+                        m = import path;
+                      in
+                      if builtins.isFunction m then m args else m;
+                  in
                   {
-                    config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable (lib.mkMerge [
-                      {
-                        imports = it.unguardedConfigPaths;
-                      }
-                    ]);
+                    config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable (
+                      lib.mkMerge (map loadModule it.unguardedConfigPaths)
+                    );
                   }
                 )
-              );
+              ]);
               # TODO: partial load
               # config = lib.evalModules {
               #   modules = [ ];

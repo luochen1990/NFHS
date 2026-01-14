@@ -71,7 +71,7 @@
   };
 
   # Create a welcome message
-  environment.motd = ''
+  users.motd = ''
     Welcome to NFHS Example!
 
     This system is configured using NFHS with:

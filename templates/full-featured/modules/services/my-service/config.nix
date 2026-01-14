@@ -7,15 +7,19 @@
 
 with lib;
 {
-  config = mkIf config.my-service.enable {
+  config = mkIf config.services.my-service.enable {
     # Create user and group
-    users.users.${config.my-service.user} = mkIf (config.my-service.user == "myservice") {
-      isSystemUser = true;
-      group = config.my-service.group;
-      description = "My Service daemon user";
-    };
+    users.users.${config.services.my-service.user} =
+      mkIf (config.services.my-service.user == "myservice")
+        {
+          isSystemUser = true;
+          group = config.services.my-service.group;
+          description = "My Service daemon user";
+        };
 
-    users.groups.${config.my-service.group} = mkIf (config.my-service.group == "myservice") { };
+    users.groups.${config.services.my-service.group} = mkIf (
+      config.services.my-service.group == "myservice"
+    ) { };
 
     # Systemd service configuration
     systemd.services.my-service = {
@@ -25,9 +29,9 @@ with lib;
 
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${config.my-service.package}/bin/hello";
-        User = config.my-service.user;
-        Group = config.my-service.group;
+        ExecStart = "${config.services.my-service.package}/bin/hello";
+        User = config.services.my-service.user;
+        Group = config.services.my-service.group;
         Restart = "on-failure";
         RestartSec = 5;
 
@@ -38,19 +42,19 @@ with lib;
         NoNewPrivileges = true;
 
         # Environment variables
-        Environment = mapAttrsToList (k: v: "${k}=${v}") config.my-service.environment;
+        Environment = mapAttrsToList (k: v: "${k}=${v}") config.services.my-service.environment;
       };
 
       # Add port to environment
-      environment.PORT = toString config.my-service.port;
+      environment.PORT = toString config.services.my-service.port;
     };
 
     # Firewall configuration
-    networking.firewall.allowedTCPPorts = mkIf config.my-service.openFirewall [
-      config.my-service.port
+    networking.firewall.allowedTCPPorts = mkIf config.services.my-service.openFirewall [
+      config.services.my-service.port
     ];
 
     # Add the service package to system packages
-    environment.systemPackages = [ config.my-service.package ];
+    environment.systemPackages = [ config.services.my-service.package ];
   };
 }
