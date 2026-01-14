@@ -9,7 +9,7 @@
 
 {
   imports = [
-    # Modules will be automatically discovered and imported from modules/
+    # Modules will be automatically discovered and imported from nixosModules/
     # The my-service module will be available here
   ];
 
@@ -39,7 +39,7 @@
     wget
 
     # Include packages from our flake (if they exist)
-    # utils.packages.hello-fhs or similar would be available here
+    # utils.packages.hello or similar would be available here
   ];
 
   # Networking configuration

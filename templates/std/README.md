@@ -6,18 +6,18 @@
 
 ```
 .
-├── pkgs/                    # flake-output.packages
-│   ├── hello-fhs/          # 示例包：问候程序
-│   └── fortune-fhs/        # 示例包：Fortune 生成器
-├── modules/                 # flake-output.nixosModules
+├── packages/                # flake-output.packages
+│   ├── hello/              # 示例包：问候程序
+│   └── fortune/            # 示例包：Fortune 生成器
+├── nixosModules/            # flake-output.nixosModules
 │   └── services/my-service/ # 示例 NixOS 模块
 │       ├── options.nix     # 模块选项定义
 │       ├── config.nix      # 模块配置实现
 │       └── default.nix     # 模块入口
-├── profiles/               # flake-output.nixosConfigurations
+├── nixosConfigurations/     # flake-output.nixosConfigurations
 │   └── example/            # 示例系统配置
 │       └── configuration.nix
-├── shells/                 # flake-output.devShells
+├── devShells/               # flake-output.devShells
 │   ├── default.nix         # 默认开发环境
 │   └── rust.nix           # Rust 开发环境
 ├── apps/                   # flake-output.apps
@@ -35,9 +35,9 @@
 ## 功能特性
 
 ### 📦 **包管理**
-- 自动发现 `pkgs/<name>/package.nix` 文件
+- 自动发现 `packages/<name>/package.nix` 文件
 - 标准的 Nixpkgs 包定义格式
-- 示例：`hello-fhs` 和 `fortune-fhs` 包
+- 示例：`hello` 和 `fortune` 包
 
 ### 🏗️ **模块系统**
 - 带选项分离的 NixOS 模块
@@ -80,21 +80,18 @@ nix flake check
 nix develop .#default
 
 # 构建包
-nix build .#hello-fhs
-nix build .#fortune-fhs
+nix build .#hello
+nix build .#fortune
 
 # 运行应用
 nix run .#status
 nix run .#deploy local
-
-# 查看工具函数
-nix eval .#lib.string.toTitle --apply 'f: f "hello world"'
 ```
 
 ## 实际用例
 
 ### 1. 添加新包
-在 `pkgs/my-tool/package.nix` 中创建：
+在 `packages/my-tool/package.nix` 中创建：
 ```nix
 { stdenv, lib, ... }:
 stdenv.mkDerivation {
@@ -106,7 +103,7 @@ stdenv.mkDerivation {
 ```
 
 ### 2. 创建 NixOS 模块
-在 `modules/my-module/` 中添加：
+在 `nixosModules/my-module/` 中添加：
 ```nix
 # options.nix
 { lib, ... }:
@@ -124,7 +121,7 @@ stdenv.mkDerivation {
 ```
 
 ### 3. 系统配置使用
-在 `profiles/my-host/configuration.nix` 中：
+在 `nixosConfigurations/my-host/configuration.nix` 中：
 ```nix
 { config, lib, pkgs, ... }:
 {
