@@ -70,14 +70,13 @@ The framework implements an advanced module loading system:
 ## Testing Infrastructure
 
 ### Template Validation System
-- **Location**: `checks/template-validation/validators.py`
-- **Purpose**: Validates templates against current development changes
-- **Method**: run `python checks/template-validation/validators.py` to test it
+- **Core (Nix)**: `checks/template-validation/default.nix` implements a pure-Nix validator that mocks inputs to evaluate all templates against the current library code. It runs automatically via `nix flake check`.
+- **Integration (Python)**: `checks/template-validation/validators.py` simulates real-world usage by creating temporary directories, replacing URLs, and running actual Nix commands. Use this for deep integration testing.
 
 ### Running Tests
 ```bash
-python checks/template-validation/validators.py  # run template checks (since `nix flake check` is special and cannot be called nested)
-nix flake check # Run all checks and validations
+nix flake check                                  # Standard test (CI friendly)
+python checks/template-validation/validators.py  # Manual integration test (Full simulation)
 ```
 
 ## Project Configuration

@@ -2,7 +2,7 @@
 stdenv.mkDerivation {
   pname = "hello";
   version = "1.0.0";
-  src = builtins.placeholder "out";
+  dontUnpack = true;
   buildPhase = ''
     echo "Hello from embedded project!"
   '';
