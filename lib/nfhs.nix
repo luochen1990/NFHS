@@ -31,25 +31,25 @@ let
   mkOptionsModule =
     {
       paths,
-      breadcrumbs,
+      modPath,
     }:
     moduleArgs:
     let
       rawOptions = unionFor paths (path: import (path + "/options.nix") moduleArgs);
-      virtualEnableOption = lib.mkEnableOption (concatStringsSep "." breadcrumbs);
+      virtualEnableOption = lib.mkEnableOption (concatStringsSep "." modPath);
       filledOptions = {
         enable = virtualEnableOption;
       }
       // rawOptions;
     in
     {
-      options = lib.attrsets.setAttrByPath breadcrumbs filledOptions;
+      options = lib.attrsets.setAttrByPath modPath filledOptions;
     };
 
   mkGuardedTreeNode =
     {
+      modPath,
       paths,
-      breadcrumbs,
       optionsModule,
     }:
     let
@@ -69,22 +69,22 @@ let
         into = !guarded;
         pick = guarded;
         out = {
-          breadcrumbs = it.breadcrumbs';
+          modPath = it.breadcrumbs';
           paths = [ it.path ];
           optionsModule = mkOptionsModule {
-            breadcrumbs = it.breadcrumbs';
+            modPath = it.breadcrumbs';
             paths = [ it.path ];
           };
         };
       });
 
-      # TODO: 这里需要对 breadcrumbs 进行去重，暂时先假设没有重复的情况
+      # TODO: 这里需要对 modPath 进行去重，暂时先假设没有重复的情况
       children = for guardedSubdirs (subdir: mkGuardedTreeNode subdir);
     in
     {
       inherit
+        modPath
         paths
-        breadcrumbs
         optionsModule
         unguardedConfigPaths
         children
@@ -220,8 +220,8 @@ in
       moduleSets =
         let
           moduleTree = mkGuardedTreeNode {
+            modPath = [ ];
             paths = filter pathExists (map (root: root + "/modules") roots);
-            breadcrumbs = [ ];
             optionsModule = { };
           };
         in
@@ -252,7 +252,7 @@ in
             into = it.depth == 0 && outline.packages.judge it.name || it.depth >= 1;
             pick = it.depth >= 1 && pathExists package-dot-nix;
             out = {
-              name = concatStringsSep "/" (tail it.breadcrumbs ++ [ it.name ]);
+              name = concatStringsSep "/" (tail it.breadcrumbs');
               value = context.pkgs.callPackage package-dot-nix { };
             };
           })
@@ -267,7 +267,7 @@ in
             into = it.depth == 0 && outline.devShells.judge it.name || it.depth >= 1;
             pick = it.depth == 1 && pathExists default-dot-nix;
             out = {
-              name = concatStringsSep "/" (tail it.breadcrumbs ++ [ it.name ]);
+              name = concatStringsSep "/" (tail it.breadcrumbs');
               #value = context.pkgs.callPackage default-dot-nix { };
               value = import default-dot-nix context;
             };
@@ -279,11 +279,11 @@ in
         listToAttrs (
           concatFor moduleSets.guardedToplevelModules (it: [
             {
-              name = (concatStringsSep "." it.breadcrumbs) + ".options";
+              name = (concatStringsSep "." it.modPath) + ".options";
               value = it.optionsModule;
             }
             {
-              name = (concatStringsSep "." it.breadcrumbs) + ".config";
+              name = (concatStringsSep "." it.modPath) + ".config";
               value = (
                 {
                   lib,
@@ -291,7 +291,7 @@ in
                   ...
                 }:
                 {
-                  config = lib.mkIf (lib.attrsets.getAttrFromPath it.breadcrumbs config).enable lib.mkMerge ([
+                  config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable lib.mkMerge ([
                     {
                       imports = it.unguardedConfigPaths;
                     }
@@ -329,7 +329,7 @@ in
                     ...
                   }:
                   {
-                    config = lib.mkIf (lib.attrsets.getAttrFromPath it.breadcrumbs config).enable (lib.mkMerge [
+                    config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable (lib.mkMerge [
                       {
                         imports = it.unguardedConfigPaths;
                       }
