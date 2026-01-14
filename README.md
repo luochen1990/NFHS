@@ -61,7 +61,7 @@ nix flake init --template github:luochen1990/Nix-FHS#project
   };
 
   outputs = { self, nixpkgs, nix-fhs, ... }:
-    nix-fhs.mkFlake {
+    nix-fhs.lib.mkFlake {
       inherit self nixpkgs;
     };
 }
