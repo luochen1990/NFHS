@@ -63,6 +63,7 @@ let
 
       # Extract outputs for the current system
       packages = outputs.packages.${system} or { };
+      apps = outputs.apps.${system} or { };
       devShells = outputs.devShells.${system} or { };
       checks = outputs.checks.${system} or { };
       nixosConfigurations = outputs.nixosConfigurations or { };
@@ -70,9 +71,22 @@ let
       # Helper to get derivation or path
       getDrv = item: if lib.isDerivation item then item else item;
 
+      # Validate apps structure
+      validateApps =
+        let
+          validateApp =
+            name: app:
+            if app ? type && app.type == "app" && app ? program then
+              pkgs.writeText "check-app-${templateName}-${name}" "pass"
+            else
+              throw "Template ${templateName} app ${name} has invalid structure";
+        in
+        lib.mapAttrsToList validateApp apps;
+
     in
     [ urlCheck ]
     ++ (map getDrv (lib.attrValues packages))
+    ++ validateApps
     ++
       # We check that devShells evaluate and can produce their wrapper derivation
       (map getDrv (lib.attrValues devShells))

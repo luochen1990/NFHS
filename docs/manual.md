@@ -15,7 +15,7 @@ Nix FHS 建立了文件系统到 flake outputs 的直接映射关系：
 | `pkgs/<name>/package.nix` (或 `packages/`)      | `packages.<system>.<name>`                   | `nix build .#<name>`               |
 | `modules/<name>/...` (或 `nixosModules/`)   | `nixosModules.<name>`  | - |
 | `profiles/<name>/configuration.nix` (或 `nixosConfigurations/`, `hosts/`)   | `nixosConfigurations.<name>`  | `nixos-rebuild --flake .#<name>`    |
-| `apps/<name>/default.nix`      | `apps.<system>.<name>`                       | `nix run .#<name>`                 |
+| `apps/<name>/package.nix`      | `packages.<system>.<name>`, `apps.<system>.<name>` | `nix build .#<name>`, `nix run .#<name>` |
 | `shells/<name>.nix` (或 `devShells/`) | `devShells.<system>.<name>`                  | `nix develop .#<name>`             |
 | `templates/<name>/`    | `templates.<name>`                           | `nix flake init --template <url>#<name>` |
 | `lib/<name>.nix` (或 `utils/`, `tools/`)      | `lib.<name>`                                 | `nix eval .#lib.<name>`            |
@@ -304,53 +304,75 @@ nixos-rebuild build --flake .#server
 
 `apps/` 目录定义可直接运行的应用程序，每个子目录对应一个 `flake outputs.apps` 项。
 
+**设计说明**：`apps/` 目录与 `pkgs/` 目录使用相同的 `package.nix` 结构。Nix FHS 会自动为每个包生成对应的 `apps` 输出，使用 `meta.mainProgram` 作为程序入口点。这意味着同一个定义可以同时作为 `packages` 和 `apps` 使用。
+
 ### 目录结构
 
 ```
 apps/
 ├── hello/
-│   ├── default.nix
-│   └── hello.py
+│   └── package.nix
 ├── deploy/
-│   ├── default.nix
+│   ├── package.nix
 │   └── deploy.sh
 └── backup/
-    ├── default.nix
+    ├── package.nix
     └── backup.py
 ```
 
 ### 应用定义示例
 
 ```nix
-# apps/hello/default.nix
-{ pkgs }:
+# apps/hello/package.nix
+{ lib, writeShellScriptBin }:
 
-{
-  type = "app";
-  program = toString (pkgs.writeScriptBin "hello-app" ''
-    #!${pkgs.runtimeShell}
-    echo "Hello from Nix FHS!"
-    python3 ${./hello.py}
-  '');
+writeShellScriptBin "hello-app" ''
+  #!${writeShellScriptBin}
+  echo "Hello from Nix FHS!"
+  echo "Current time: $(date)"
+''
+# 必须定义 meta.mainProgram 以让 Nix FHS 知道程序的入口点
+// {
+  meta.mainProgram = "hello-app";
 }
 ```
 
-```python
-# apps/hello/hello.py
-#!/usr/bin/env python3
-import datetime
+或者使用 `mkDerivation` 打包更复杂的应用：
 
-print(f"Current time: {datetime.datetime.now()}")
-print("This is a Python application packaged with Nix FHS!")
+```nix
+# apps/deploy/package.nix
+{ lib, stdenv, makeWrapper }:
+
+stdenv.mkDerivation {
+  pname = "deploy";
+  version = "1.0.0";
+
+  src = ./.;
+
+  buildInputs = [ makeWrapper ];
+
+  installPhase = ''
+    mkdir -p $out/bin
+    cp deploy.sh $out/bin/deploy
+    chmod +x $out/bin/deploy
+  '';
+
+  meta.mainProgram = "deploy";
+  meta.description = "Deployment helper for Nix FHS projects";
+}
 ```
 
 ### 使用方法
 
 ```bash
-# 运行应用
+# 运行应用 (使用 apps 输出)
 nix run .#hello
 
-# 查看所有可用应用
+# 或者先构建再运行 (使用 packages 输出)
+nix build .#hello
+./result/bin/hello-app
+
+# 查看所有可用应用和包
 nix flake show
 ```
 
