@@ -12,7 +12,6 @@ let
     tail
     concatLists
     elem
-    filter
     ;
 
   inherit (lib)
@@ -26,7 +25,6 @@ let
     lsDirs
     lsFiles
     findSubDirsContains
-    subDirsRec
     exploreDir
     hasPostfix
     ;
@@ -95,84 +93,81 @@ let
         children
         ;
     };
+
+  defaultLayout = {
+    roots = {
+      subdirs = [
+        ""
+        "/nix"
+      ];
+    };
+    packages =  {
+      subdirs = [
+        "pkgs"
+        "packages"
+      ];
+    };
+    nixosModules = {
+      subdirs = [
+        "modules"
+        "nixosModules"
+      ];
+    };
+    nixosConfigurations = {
+      subdirs = [
+        "profiles"
+        "hosts"
+        "nixosConfigurations"
+      ];
+    };
+    devShells = {
+      subdirs = [
+        "shells"
+        "devShells"
+      ];
+    };
+    apps = {
+      subdirs = [ "apps" ];
+    };
+    lib = {
+      subdirs = [
+        "lib"
+        "tools"
+        "utils"
+      ];
+    };
+    checks = {
+      subdirs = [ "checks" ];
+    };
+    templates = {
+      subdirs = [ "templates" ];
+    };
+  };
 in
 {
   # Main mkFlake function
   mkFlake =
     {
       self,
-      nixpkgs,
+      nixpkgs ? self.inputs.nixpkgs,
       inputs ? self.inputs,
-      roots ? [
-        self.outPath
-      ]
-      ++ filter pathExists [
-        (self.outPath + "/nix")
-      ],
       lib ? nixpkgs.lib, # 这里用户提供的 lib 是不附带自定义工具函数的标准库lib
       supportedSystems ? lib.systems.flakeExposed,
       nixpkgsConfig ? {
         allowUnfree = true;
       },
+      layout ? defaultLayout,
       ...
     }:
     let
-      outline.packages = rec {
-        subdirs = [
-          "pkgs"
-          "packages"
-        ];
-        judge = x: elem x subdirs;
-      };
+      # Add judge function to layout
+      partOf = builtins.mapAttrs (
+        name: value: x: elem x (value.subdirs)
+      ) layout;
 
-      outline.nixosModules = rec {
-        subdirs = [
-          "modules"
-          "nixosModules"
-        ];
-        judge = x: elem x subdirs;
-      };
-
-      outline.nixosConfigurations = rec {
-        subdirs = [
-          "profiles"
-          "hosts"
-          "nixosConfigurations"
-        ];
-        judge = x: elem x subdirs;
-      };
-
-      outline.devShells = rec {
-        subdirs = [
-          "shells"
-          "devShells"
-        ];
-        judge = x: elem x subdirs;
-      };
-
-      outline.apps = rec {
-        subdirs = [ "apps" ];
-        judge = x: elem x subdirs;
-      };
-
-      outline.lib = rec {
-        subdirs = [
-          "lib"
-          "tools"
-          "utils"
-        ];
-        judge = x: elem x subdirs;
-      };
-
-      outline.checks = rec {
-        subdirs = [ "checks" ];
-        judge = x: elem x subdirs;
-      };
-
-      outline.templates = rec {
-        subdirs = [ "templates" ];
-        judge = x: elem x subdirs;
-      };
+      roots = forFilter (layout.roots.subdirs or [ ]) (
+        d: let p = self.outPath + d; in if pathExists p then p else null
+      );
 
       # system related context
       systemContext =
@@ -186,7 +181,7 @@ in
           );
           lib' = prepareLib {
             inherit roots pkgs;
-            libSubdirs = outline.lib.subdirs;
+            libSubdirs = layout.lib.subdirs;
             lib = lib;
           };
           specialArgs = {
@@ -228,7 +223,7 @@ in
             modPath = [ ];
             paths = concatFor roots (
               root:
-              forFilter outline.nixosModules.subdirs (
+              forFilter layout.nixosModules.subdirs (
                 subdir:
                 let
                   p = root + "/${subdir}";
@@ -263,7 +258,7 @@ in
         listToAttrs (
           exploreDir roots (it: rec {
             package-dot-nix = it.path + "/package.nix";
-            into = it.depth == 0 && outline.packages.judge it.name || it.depth >= 1;
+            into = it.depth == 0 && partOf.packages it.name || it.depth >= 1;
             pick = it.depth >= 1 && pathExists package-dot-nix;
             out = {
               name = concatStringsSep "/" (tail it.breadcrumbs');
@@ -283,7 +278,7 @@ in
             package-dot-nix = it.path + "/package.nix";
             pkg = context.pkgs.callPackage package-dot-nix { };
             mainProgram = inferMainProgram pkg;
-            into = it.depth == 0 && outline.apps.judge it.name || it.depth >= 1;
+            into = it.depth == 0 && partOf.apps it.name || it.depth >= 1;
             pick = it.depth >= 1 && pathExists package-dot-nix;
             out = {
               name = concatStringsSep "/" (tail it.breadcrumbs');
@@ -301,7 +296,7 @@ in
         listToAttrs (
           concatLists (
             exploreDir roots (it: rec {
-              isShellsRoot = it.depth == 0 && outline.devShells.judge it.name;
+              isShellsRoot = it.depth == 0 && partOf.devShells it.name;
               isShellsSubDir = it.depth >= 1;
 
               into = isShellsRoot || isShellsSubDir;
@@ -436,7 +431,7 @@ in
           exploreDir roots (it: rec {
             configuration-dot-nix = it.path + "/configuration.nix";
             marked = pathExists configuration-dot-nix;
-            into = it.depth == 0 && outline.nixosConfigurations.judge it.name;
+            into = it.depth == 0 && partOf.nixosConfigurations it.name;
             pick = it.depth >= 1 && marked;
             out = {
               name = concatStringsSep "/" (tail it.breadcrumbs');
@@ -506,7 +501,7 @@ in
 
       lib = prepareLib {
         inherit roots lib;
-        libSubdirs = outline.lib.subdirs;
+        libSubdirs = layout.lib.subdirs;
       };
 
       templates =
