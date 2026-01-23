@@ -23,6 +23,7 @@ let
     templateName:
     let
       templatePath = ../../templates + "/${templateName}";
+      _ = builtins.trace "CheckTemplate: ${templateName} path: ${toString templatePath}" null;
 
       # Load flake.nix as an expression
       flakeNix = import (templatePath + "/flake.nix");

@@ -2,7 +2,7 @@
   description = "Flake FHS";
 
   outputs =
-    { self, nixpkgs, ... }:
+    inputs@{ self, nixpkgs, ... }:
     let
       utils' =
         nixpkgs.lib // (import ./lib/list.nix) // (import ./lib/dict.nix) // (import ./lib/file.nix);
@@ -15,7 +15,7 @@
         mkFlake
         ;
     in
-    mkFlake {
-      inherit self nixpkgs;
+    mkFlake { inherit inputs; } {
+      systems = nixpkgs.lib.systems.flakeExposed;
     };
 }

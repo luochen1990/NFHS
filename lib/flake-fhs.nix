@@ -12,6 +12,8 @@ let
     tail
     concatLists
     elem
+    isFunction
+    isList
     ;
 
   inherit (lib)
@@ -27,6 +29,7 @@ let
     findSubDirsContains
     exploreDir
     hasPostfix
+    recursiveUpdate
     ;
 
   mkOptionsModule =
@@ -101,7 +104,7 @@ let
         "/nix"
       ];
     };
-    packages =  {
+    packages = {
       subdirs = [
         "pkgs"
         "packages"
@@ -143,10 +146,79 @@ let
       subdirs = [ "templates" ];
     };
   };
-in
-{
-  # Main mkFlake function
-  mkFlake =
+
+  # Configuration Module Schema
+  flakeFhsOptions =
+    { lib, ... }:
+    let
+      mkLayoutEntry =
+        description: default:
+        lib.mkOption {
+          inherit description;
+          inherit default;
+          type = lib.types.coercedTo (lib.types.listOf lib.types.str) (l: { subdirs = l; }) (
+            lib.types.submodule {
+              options.subdirs = lib.mkOption {
+                type = lib.types.listOf lib.types.str;
+                description = "List of subdirectories";
+                default = [ ];
+              };
+            }
+          );
+        };
+    in
+    {
+      options = {
+        systems = lib.mkOption {
+          type = lib.types.listOf lib.types.str;
+          default = lib.systems.flakeExposed;
+          description = "List of supported systems";
+        };
+
+        nixpkgs.config = lib.mkOption {
+          type = lib.types.attrs;
+          default = {
+            allowUnfree = true;
+          };
+          description = "Nixpkgs configuration";
+        };
+
+        layout = lib.mkOption {
+          type = lib.types.submodule {
+            freeformType = lib.types.attrs;
+            options = {
+              roots = mkLayoutEntry "Roots directories" defaultLayout.roots;
+              packages = mkLayoutEntry "Packages directories" defaultLayout.packages;
+              nixosModules = mkLayoutEntry "NixOS modules directories" defaultLayout.nixosModules;
+              nixosConfigurations = mkLayoutEntry "NixOS configurations directories" defaultLayout.nixosConfigurations;
+              devShells = mkLayoutEntry "DevShells directories" defaultLayout.devShells;
+              apps = mkLayoutEntry "Apps directories" defaultLayout.apps;
+              lib = mkLayoutEntry "Lib directories" defaultLayout.lib;
+              checks = mkLayoutEntry "Checks directories" defaultLayout.checks;
+              templates = mkLayoutEntry "Templates directories" defaultLayout.templates;
+            };
+          };
+          default = { };
+          description = "Directory layout configuration";
+        };
+
+        flake = lib.mkOption {
+          type = lib.types.attrs;
+          default = { };
+          description = "Extra flake outputs to merge with FHS outputs";
+        };
+
+        perSystem = lib.mkOption {
+          type = lib.types.attrs;
+          default = { };
+          description = "Per-system outputs to merge";
+        };
+      };
+    };
+
+  # Core implementation of mkFlake logic
+  # Original implementation restored
+  mkFlakeCore =
     {
       self,
       nixpkgs ? self.inputs.nixpkgs,
@@ -160,13 +232,17 @@ in
       ...
     }:
     let
-      # Add judge function to layout
       partOf = builtins.mapAttrs (
-        name: value: x: elem x (value.subdirs)
+        name: value: x:
+        elem x (value.subdirs)
       ) layout;
 
       roots = forFilter (layout.roots.subdirs or [ ]) (
-        d: let p = self.outPath + d; in if pathExists p then p else null
+        d:
+        let
+          p = self.outPath + d;
+        in
+        if pathExists p then p else null
       );
 
       # system related context
@@ -557,4 +633,45 @@ in
           pkgs.nixfmt-rfc-style
       );
     };
+in
+{
+  # Main mkFlake function
+  mkFlake =
+    {
+      self ? inputs.self,
+      inputs ? self.inputs,
+      nixpkgs ? inputs.nixpkgs,
+      lib ? nixpkgs.lib, # 这里用户提供的 lib 是不附带自定义工具函数的标准库lib
+    }:
+    module:
+    let
+      # Evaluate config module
+      eval = lib.evalModules {
+        modules = [
+          flakeFhsOptions
+          module
+        ];
+        specialArgs = { inherit lib; };
+      };
+
+      config = eval.config;
+
+      # 1. Extract and map options to mkFlakeCore args
+      fhsFlake = mkFlakeCore {
+        inherit
+          inputs
+          self
+          nixpkgs
+          lib
+          ;
+
+        supportedSystems = config.systems;
+        nixpkgsConfig = config.nixpkgs.config;
+        layout = config.layout;
+      };
+    in
+    fhsFlake;
+  # 2. TODO: Merge FHS outputs with Manual outputs
+  #recursiveUpdate fhsFlake config.flake;
+  #recursiveUpdate fhsFlake config.perSystem;
 }
