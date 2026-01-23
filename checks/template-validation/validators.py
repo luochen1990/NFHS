@@ -68,7 +68,7 @@ class TemplateValidator:
     def _check_flake(self, temp_dir: Path) -> TestResult:
         """Run nix flake check."""
         try:
-            result = self._run_nix(["flake", "check", "--no-net", "--quiet"], cwd=temp_dir)
+            result = self._run_nix(["flake", "check", "--quiet"], cwd=temp_dir)
             if result.returncode == 0:
                 return TestResult("flake_check", True, "nix flake check passed")
 
