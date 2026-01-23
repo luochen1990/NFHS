@@ -77,6 +77,23 @@ class TemplateValidator:
         except Exception as e:
             return TestResult("flake_check", False, f"Error running flake check: {e}")
 
+    def _check_apps_eval(self, temp_dir: Path) -> TestResult:
+        """Run nix eval .#apps --json to ensure apps evaluate correctly."""
+        try:
+            # We use --json to force deep evaluation of the output structure
+            # This catches errors that nix flake check might miss if it doesn't deep eval strings
+            result = self._run_nix(["eval", ".#apps", "--json"], cwd=temp_dir)
+            if result.returncode == 0:
+                return TestResult("apps_eval", True, "apps evaluation passed")
+            
+            error_msg = result.stderr.strip()
+            # Truncate error message if too long
+            if len(error_msg) > 500:
+                error_msg = error_msg[:500] + "..."
+            return TestResult("apps_eval", False, f"apps evaluation failed: {error_msg}")
+        except Exception as e:
+            return TestResult("apps_eval", False, f"Error running apps evaluation: {e}")
+
     def _create_temp_template(self, template_path: Path, temp_dir: Path) -> TestResult:
         """Create temporary template with local NixFHS."""
         try:
@@ -132,6 +149,7 @@ class TemplateValidator:
 
             if temp_result.passed:
                 results.append(self._check_flake(temp_dir))
+                results.append(self._check_apps_eval(temp_dir))
 
         finally:
             # Cleanup
