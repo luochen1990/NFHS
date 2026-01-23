@@ -19,20 +19,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Maximize Nix Disk Space (Rampage Mode)
-        uses: wimpysworld/nothing-but-nix@main
+        uses: wimpysworld/nothing-but-nix@v9
         with:
           #DOC: https://github.com/marketplace/actions/nothing-but-nix
 
           # Rampage: Most aggressive mode - ~130GB for Nix store
           hatchet-protocol: 'rampage'
-          # Minimal safe havens fopure Nix project (no system tools needed)
+          # Synchronous purge - ensure all space ready before build starts
+          witness-carnage: true
+          # Minimal safe havens for pure Nix project (no system tools needed)
           root-safe-haven: '2048'   # Reserve 2GB on /
           mnt-safe-haven: '2048'     # Reserve 2GB on /mnt
-          # Grant user ownership of /nix for Nix installer
+          # DO NOT ENABLE: determinateSystems/nix-installer-action requires root-owned /nix
           #nix-permission-edict: true
 
       - name: Install Nix
-        uses: determinateSystems/nix-installer-action@main
+        uses: determinateSystems/nix-installer-action@v9
 
       - name: Run flake check
         run: nix flake check
