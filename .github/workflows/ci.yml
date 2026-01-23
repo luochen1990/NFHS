@@ -22,16 +22,9 @@ jobs:
         uses: wimpysworld/nothing-but-nix@v9
         with:
           #DOC: https://github.com/marketplace/actions/nothing-but-nix
-
-          # Rampage: Most aggressive mode - ~130GB for Nix store
-          hatchet-protocol: 'rampage'
-          # Synchronous purge - ensure all space ready before build starts
-          witness-carnage: true
-          # Minimal safe havens for pure Nix project (no system tools needed)
+          hatchet-protocol: 'rampage' # Rampage: Most aggressive mode
           root-safe-haven: '2048'   # Reserve 2GB on /
           mnt-safe-haven: '2048'     # Reserve 2GB on /mnt
-          # DO NOT ENABLE: determinateSystems/nix-installer-action requires root-owned /nix
-          #nix-permission-edict: true
 
       - name: Install Nix
         uses: determinateSystems/nix-installer-action@v9
@@ -39,10 +32,5 @@ jobs:
       - name: Run flake check
         run: nix flake check
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
       - name: Run template validation
-        run: python checks/template-validation/validators.py
+        run: nix develop --command python checks/template-validation/validators.py
