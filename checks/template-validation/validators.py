@@ -50,7 +50,7 @@ class TemplateValidator:
             #"--option", "allow-dirty", "true",
             *cmd
         ]
-        return subprocess.run(full_cmd, cwd=cwd, capture_output=True, text=True, timeout=120)
+        return subprocess.run(full_cmd, cwd=cwd, capture_output=True, text=True, timeout=300)
 
     def _check_github_url(self, template_path: Path) -> TestResult:
         """Check template uses correct GitHub URL."""
