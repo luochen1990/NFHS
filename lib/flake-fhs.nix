@@ -30,7 +30,7 @@ let
     exploreDir
     hasSuffix
     recursiveUpdate
-    merge2
+    #merge2
     ;
 
   mkOptionsModule =
@@ -261,7 +261,7 @@ let
             libSubdirs = layout.lib.subdirs;
             lib = mergedLib;
           };
-          mergedLib = merge2 preparedLib lib;
+          mergedLib = flakeFhsLib // preparedLib // lib; #TODO: configurable
           specialArgs = {
             inherit
               self

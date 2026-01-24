@@ -1,28 +1,19 @@
 # © Copyright 2025 罗宸 (luochen1990@gmail.com, https://lambda.lc)
 #
 # 这是本项目的 lib 引用
-lib:
+flakeFhsLib:
 let
   inherit (builtins)
-    pathExists
     concatLists
     isAttrs
-    isFunction
     elem
-    tail
-    head
     ;
 
-  inherit (lib)
-    filter
+  inherit (flakeFhsLib)
     for
     unionFor
-    mapFilter
-    concatFor
     findFiles
     hasSuffix
-    isNonEmptyDir
-    lsDirs
     exploreDir
     ;
 in
@@ -67,31 +58,34 @@ in
 
       # 返回（不依赖的）自定义函数集合
       lv0 = unionFor (levels.lv0 or [ ]) (x: import x.path);
-      layer0 = lv0 // lib;
 
       # 返回（不依赖pkgs的）自定义函数集合，但每个自定义函数都可从 lib 参数中访问（不依赖pkgs的）基础工具函数
-      lv1 = unionFor (levels.lv1 or [ ]) (x: import x.path layer1);
-      layer1 = lv1 // layer0 // { more = lv2; }; # TODO: 命名冲突不覆盖，而是直接报错
-      lv10 = lv1 // lv0;
+      lv1 =
+        let
+          arg1 = flakeFhsLib // arg1' // { more = lv2; }; # TODO: 这里后续扩展为可配置
+        in
+        unionFor (levels.lv1 or [ ]) (x: import x.path arg1);
+
+      arg1' = lv1 // lv0 // lib; # TODO: 命名冲突不覆盖，而是直接报错
+      ret1 = lv1 // lv0;
 
       # 返回（依赖pkgs的）自定义函数集合，但每个自定义函数都可从 lib 参数中访问全量工具函数
       lv2 =
         pkgs:
         let
-          myLib = layer2 pkgs; # 提前预备，避免循环中重复创建
+          arg2 = flakeFhsLib // lv2 pkgs // arg1'; # 提前预备，避免循环中重复创建
         in
         unionFor (levels.lv2 or [ ]) (
           x:
           import x.path (
             # lib/more/ 目录下的文件可以从 pkgs.lib 参数中访问所有函数
-            pkgs // { lib = myLib; }
+            pkgs // { lib = arg2; }
           )
         );
-      layer2 = pkgs: lv2 pkgs // layer1; # TODO: 命名冲突不覆盖，而是直接报错
-      lv210 = pkgs: lv2 pkgs // lv10;
+      ret2 = pkgs: lv2 pkgs // ret1;
     in
     # 用户从 prepareLib { ... } 获得的
     # 根据是否给了 pkgs 有所区别: 如果给了 pkgs 则返回全量函数集合；
     # 若没有 pkgs 则返回基础函数集合 以及附带 more 用于加载全量函数集合
-    if pkgs != null then lv210 pkgs else { more = pkgs: lv2 pkgs; } // lv10;
+    if pkgs != null then ret2 pkgs else ret1 // { more = lv2; };
 }
