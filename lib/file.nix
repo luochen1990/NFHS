@@ -34,12 +34,18 @@ rec {
       false;
 
   # hasPostfix : String -> Path -> Bool
-  hasPostfix =
-    postfix:
+  hasPostfix = postfix: hasSuffix ("." + postfix);
+
+  # hasSuffix : String -> Path -> Bool
+  hasSuffix =
+    suffix: path:
     let
-      pat = ".*\\." + builtins.replaceStrings [ "." ] [ "\\." ] postfix;
+      str = toString path;
+      strLen = builtins.stringLength str;
+      sufLen = builtins.stringLength suffix;
     in
-    path: match pat (toString path) != null;
+    assert builtins.substring 0 1 suffix == ".";
+    strLen >= sufLen && builtins.substring (strLen - sufLen) sufLen str == suffix;
 
   # underDir : Path -> Path -> Bool
   # judge whether the path is under the directory
@@ -66,7 +72,7 @@ rec {
   );
 
   # lsDirPaths : Path -> [Path]
-  lsDirPaths = (path: map (subdir: path + "/${subdir}") (lsDirs path));
+  lsDirPaths = path: map (subdir: path + "/${subdir}") (lsDirs path);
 
   # subDirsAll : Path -> [Path]
   # subDirs : Path -> [Path]
