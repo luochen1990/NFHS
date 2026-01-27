@@ -5,6 +5,7 @@ let
   inherit (builtins)
     filter
     map
+    readFile
     readDir
     attrNames
     match
@@ -20,6 +21,9 @@ rec {
 
   # isNotHidden : Path -> Bool
   isNotHidden = path: match "\\..*" path == null;
+
+  # isEmptyFile : Path -> Bool
+  isEmptyFile = path: match "[[:space:]]*" (readFile path) != null;
 
   # isNonEmptyDir : Path -> Bool
   isNonEmptyDir =

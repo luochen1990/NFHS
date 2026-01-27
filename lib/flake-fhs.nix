@@ -12,6 +12,7 @@ let
     tail
     concatLists
     elem
+    isFunction
     ;
 
   inherit (lib)
@@ -27,6 +28,7 @@ let
     findSubDirsContains
     exploreDir
     hasSuffix
+    isEmptyFile
     ;
 
   mkOptionsModule =
@@ -36,7 +38,14 @@ let
     }:
     moduleArgs:
     let
-      rawOptions = unionFor paths (path: import (path + "/options.nix") moduleArgs);
+      rawOptions = unionFor paths (
+        path:
+        let
+          p = path + "/options.nix";
+          opts = if (isEmptyFile p) then { } else import p;
+        in
+        if isFunction opts then opts moduleArgs else opts
+      );
       virtualEnableOption = lib.mkEnableOption (concatStringsSep "." modPath);
       filledOptions = {
         enable = virtualEnableOption;
@@ -62,11 +71,13 @@ let
           defaulted = pathExists default-dot-nix;
           into = !(guarded || defaulted);
           pick = !guarded;
-          out = if defaulted then
-            [ default-dot-nix ]
-          else forFilter (lsFiles it.path) (
-            fname: if hasSuffix ".nix" fname then (it.path + "/${fname}") else null
-          );
+          out =
+            if defaulted then
+              [ default-dot-nix ]
+            else
+              forFilter (lsFiles it.path) (
+                fname: if hasSuffix ".nix" fname then (it.path + "/${fname}") else null
+              );
         })
       );
 
@@ -428,7 +439,7 @@ let
                     let
                       m = import path;
                     in
-                    if builtins.isFunction m then m args else m;
+                    if isFunction m then m args else m;
                 in
                 {
                   config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable (
@@ -474,7 +485,7 @@ let
                       let
                         m = import path;
                       in
-                      if builtins.isFunction m then m args else m;
+                      if isFunction m then m args else m;
                   in
                   {
                     config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable (
