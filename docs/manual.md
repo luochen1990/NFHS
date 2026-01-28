@@ -14,7 +14,7 @@ Flake FHS 建立了文件系统到 flake outputs 的直接映射关系：
 | --- | --- | --- | :---: | --- | --- |
 | [`packages`](#dir-pkgs) (`pkgs`) | `<name>/package.nix` | `default.nix` | ✅ | `packages.<system>.<name>` | `nix build .#<name>` |
 | [`nixosModules`](#dir-modules) (`modules`) | `<name>/...` | `options.nix`, `default.nix` | ✅ | `nixosModules.<name>` | - |
-| [`nixosConfigurations`](#dir-profiles) (`profiles`, `hosts`) | `<name>/configuration.nix` | 无 | ✅ | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
+| [`nixosConfigurations`](#dir-hosts) (`hosts`, `profiles`) | `<name>/configuration.nix` | 无 | ✅ | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
 | [`apps`](#dir-apps) | `<name>/package.nix` | `default.nix` | ✅ | `apps.<system>.<name>` | `nix run .#<name>` |
 | [`devShells`](#dir-shells) (`shells`) | `<name>.nix` | `default.nix` | ✅ | `devShells.<system>.<name>` | `nix develop .#<name>` |
 | [`templates`](#dir-templates) | `<name>/` | `flake.nix` | ❌ | `templates.<name>` | `nix flake init ...` |
@@ -187,7 +187,7 @@ modules/services/my-service/config.nix:
 在其他 NixOS 配置中使用：
 
 ```nix
-# profiles/my-host/configuration.nix
+# hosts/my-host/configuration.nix
 {
   # 模块会被自动导入，无需手动编写
   # imports = [
@@ -210,14 +210,14 @@ modules/services/my-service/config.nix:
 
 Tips: 模块部分加载机制 的 实现原理详见 [设计文档](./modules-partial-load-design.md)
 
-## 🏗️ <span id="dir-profiles">profiles/ - NixOS 配置</span>
+## 🏗️ <span id="dir-hosts">hosts/ - NixOS 配置</span>
 
-`profiles/` 目录用于定义完整的 NixOS 系统配置，每个子目录对应一个 `nixosConfigurations` 输出。
+`hosts/` (或 `profiles/`) 目录用于定义完整的 NixOS 系统配置，每个子目录对应一个 `nixosConfigurations` 输出。
 
 ### 目录结构
 
 ```
-profiles/
+hosts/
 ├── server/
 │   └── configuration.nix
 ├── desktop/
@@ -235,7 +235,7 @@ profiles/
 ### 配置定义示例
 
 ```nix
-# profiles/desktop/configuration.nix
+# hosts/desktop/configuration.nix
 { config, lib, pkgs, modulesPath, ... }:
 
 {
@@ -260,10 +260,10 @@ profiles/
 
 ### 📁 shared/ 目录
 
-`shared/` 用于存放多个 profiles 之间共享的配置片段：
+`shared/` 用于存放多个 hosts 之间共享的配置片段：
 
 ```nix
-# profiles/shared/base-system.nix
+# hosts/shared/base-system.nix
 { config, lib, pkgs, ... }:
 
 {
