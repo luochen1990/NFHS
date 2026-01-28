@@ -96,7 +96,7 @@ stdenv.mkDerivation {
 - 递归地为所有子目录生成 enable 选项, 目录路径决定 options 路径
 - 对于 unguarded 目录，默认 enable = true； 对于 guarded 目录，默认 enable = false, 你也可以在 options.nix 中手动覆盖 enable 选项的定义 (WIP)
 - 系统将自动导入以下模块:
-  a. 所有 unguarded 子目录中的 nix 配置文件
+  a. 所有 unguarded 子目录中的 nix 配置文件 (若目录含 default.nix 则视为叶子模块，仅导入该文件不再递归)
   b. 所有 guarded 子目录中的 options.nix 配置文件
   c. 所有 enable = true 的 guarded 子目录中的 nix 配置文件
 
@@ -629,6 +629,8 @@ flake-fhs.lib.mkFlake { inherit inputs; } { }
 | `systems` | list of str | `lib.systems.flakeExposed` | 支持的系统架构列表 |
 | `nixpkgs.config` | attrs | `{ allowUnfree = true; }` | Nixpkgs 配置选项 |
 | `layout` | submodule | 见下方说明 | 目录布局配置 |
+| `nixosConfigurations.specialArgs` | function | `_: {}` | 传递给 nixosSystem 的 extra specialArgs (`system -> attrs`) |
+| `nixosConfigurations.perHost.specialArgs` | function | `_: {}` | 针对特定 host 的 extra specialArgs (`hostName -> attrs`) |
 | `flake` | attrs | `{ }` | 额外的 flake outputs（即将支持） |
 | `perSystem` | attrs | `{ }` | 每个系统的额外配置（即将支持） |
 

@@ -51,6 +51,8 @@ The framework implements an advanced module loading system:
 
 ### Module Loading Rules
 1. All unguarded directory modules are imported
+   - If a directory contains `default.nix`, it is treated as a leaf module (recursion stops) and only `default.nix` is imported
+   - Otherwise, all `.nix` files in the directory are imported and subdirectories are recursed
 2. All guarded directory `options.nix` files are imported
 3. Only enabled guarded modules (enable = true) import their config files
 
