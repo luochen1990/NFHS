@@ -1,53 +1,51 @@
 # Flake FHS 使用手册
 
-Flake FHS 是一个 Nix flakes 项目结构框架，它通过标准化的目录结构自动生成 flake outputs，让开发者专注于业务逻辑而非配置管理。
+Flake FHS 是一个 Nix Flake 框架，旨在通过标准化的目录结构自动生成 flake outputs，减少配置文件的维护成本。
 
-## 🚀 快速开始
+## 1. 目录映射机制
 
-### 核心映射关系
+框架的核心机制是将文件系统的目录结构直接映射为 Nix flake outputs。
 
-Flake FHS 建立了文件系统到 flake outputs 的直接映射关系：
+**映射规则表**
 
-**文件路径 → flake output → Nix 子命令**
+| 目录 (别名) | 识别模式 | 生成 Output | 对应的 Nix 命令 |
+| :--- | :--- | :--- | :--- |
+| [`pkgs`](#pkgs) (`packages`) | `<name>/package.nix` | `packages.<system>.<name>` | `nix build .#<name>` |
+| [`modules`](#modules) (`nixosModules`) | `<name>/{options.nix,*.nix}` | `nixosModules.<name>` | - |
+| [`hosts`](#hosts) (`profiles`) | `<name>/configuration.nix` | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
+| [`apps`](#apps) | `<name>/package.nix` | `apps.<system>.<name>` | `nix run .#<name>` |
+| [`shells`](#shells) (`devShells`) | `<name>.nix` | `devShells.<system>.<name>` | `nix develop .#<name>` |
+| `templates` | `<name>/` | `templates.<name>` | `nix flake init ...` |
+| [`lib`](#lib) (`utils`) | `<name>.nix` | `lib.<name>` | `nix eval .#lib.<name>` |
+| [`checks`](#checks) | `<name>.nix` | `checks.<system>.<name>` | `nix flake check .#<name>` |
 
-| 子目录 (别名) | 文件模式 | 特殊文件 | 递归子目录 | 生成的 flake output | Nix 子命令 |
-| --- | --- | --- | :---: | --- | --- |
-| [`packages`](#dir-pkgs) (`pkgs`) | `<name>/package.nix` | `default.nix` | ✅ | `packages.<system>.<name>` | `nix build .#<name>` |
-| [`nixosModules`](#dir-modules) (`modules`) | `<name>/...` | `options.nix`, `default.nix` | ✅ | `nixosModules.<name>` | - |
-| [`nixosConfigurations`](#dir-hosts) (`hosts`, `profiles`) | `<name>/configuration.nix` | 无 | ✅ | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
-| [`apps`](#dir-apps) | `<name>/package.nix` | `default.nix` | ✅ | `apps.<system>.<name>` | `nix run .#<name>` |
-| [`devShells`](#dir-shells) (`shells`) | `<name>.nix` | `default.nix` | ✅ | `devShells.<system>.<name>` | `nix develop .#<name>` |
-| [`templates`](#dir-templates) | `<name>/` | `flake.nix` | ❌ | `templates.<name>` | `nix flake init ...` |
-| [`lib`](#dir-lib) (`utils`, `tools`) | `<name>.nix` | 无 | ✅ | `lib.<name>` | `nix eval .#lib.<name>` |
-| [`checks`](#dir-checks) | `<name>.nix` | `default.nix` | ✅ | `checks.<system>.<name>` | `nix flake check .#<name>` |
+---
 
-### ✨ 核心特性
+## 2. 详细说明
 
-- **自动发现**：所有 `<name>` 来自文件/目录名，无需手动声明
-- **支持多种命名风格**：支持 `packages`, `devShells` 这样跟 flake output 1:1 的子目录命名，同时也支持 `pkgs`, `shells` 这样简短的子目录命名
-- **支持多个根目录**：多个根目录中的内容将由 Flake FHS 自动合并
+### <span id="pkgs">pkgs/ - 软件包</span>
 
-## 📦 <span id="dir-pkgs">pkgs/ - 包定义</span>
+用于定义项目特有的软件包。
 
-`pkgs/<name>/` 目录遵循 **nixpkgs** 项目的 `pkgs/by-name/xx/<name>/` 结构规范，入口文件统一为 `package.nix`。
+**目录结构**
 
-### 目录结构示例
+遵循类似 `nixpkgs` 的 `by-name` 结构：
 
 ```
 pkgs/
 ├── hello/
 │   └── package.nix
-├── my-custom-tool/
+├── my-tool/
 │   ├── package.nix
 │   └── src/
 │       └── main.c
-└── default.nix  # 可选：控制包的可见性
+└── default.nix  # (可选) 控制导出
 ```
 
-### 包定义示例
+**代码示例**
 
+`pkgs/hello/package.nix`:
 ```nix
-# pkgs/hello/package.nix
 { stdenv, fetchurl }:
 
 stdenv.mkDerivation {
@@ -56,668 +54,312 @@ stdenv.mkDerivation {
     url = "https://ftp.gnu.org/gnu/hello/hello-2.10.tar.gz";
     sha256 = "0ssi1wiafch70d1viwdv6vjdvc1sr9h3w7v4qhdbbwj3k9j5b3v8";
   };
-  meta = {
-    description = "A program that produces a familiar, friendly greeting";
-  };
 }
 ```
 
-### 🔐 控制包的可见性 (WIP)
+**导出控制 (WIP)**
 
-在某些情况下，您可能希望控制哪些包对外暴露。例如，包 A 依赖 B、C、D，但您只想对外暴露包 A。
-
-创建 `pkgs/default.nix` 文件来精确控制导出的包：
+默认情况下，所有包含 `package.nix` 的子目录都会被导出。如果你想隐藏某些内部依赖包，可以创建一个 `pkgs/default.nix`：
 
 ```nix
 # pkgs/default.nix
 {
-  # 只导出这些包到 flake outputs
+  # 显式导出
   hello = import ./hello;
-  my-public-tool = import ./my-custom-tool;
-
-  # 以下包不会出现在 flake outputs 中
-  # internal-dep = import ./internal-dep;
+  # hidden-dep = import ./hidden-dep; # 不会被导出到 flake outputs
 }
 ```
 
-**工作原理**：
-- 如果 `pkgs/default.nix` 存在，Flake FHS 使用该文件导出的包
-- 如果不存在，Flake FHS 自动导出 `pkgs/` 下的所有包
+---
 
-## ⚙️ <span id="dir-modules">modules/ - NixOS 模块</span>
+### <span id="modules">modules/ - NixOS 模块</span>
 
-在 nixpkgs 中，modules/ 目录下的模块是由 module-list.nix 手动引入的，但是在 Flake FHS 中，我们会规定 modules/ 目录的结构，并依据此规范自动发现并导入 `modules/` 目录下的所有 NixOS 模块 (生成 flake-outputs.nixosModules.default)，无需手动维护模块列表。
+用于组织可复用的 NixOS 模块。系统将根据目录特征自动分类加载，无需手动维护 `module-list.nix`。
 
-### 目录结构
+**目录结构与加载逻辑**
 
-`modules/` 目录遵循自定义的一套加载机制:
-
-- 将所有子目录按照是否包含 options.nix 文件，分为 guarded (包含) 和 unguarded (不包含) 两类
-- 递归地为所有子目录生成 enable 选项, 目录路径决定 options 路径
-- 对于 unguarded 目录，默认 enable = true； 对于 guarded 目录，默认 enable = false, 你也可以在 options.nix 中手动覆盖 enable 选项的定义 (WIP)
-- 系统将自动导入以下模块:
-  a. 所有 unguarded 子目录中的 nix 配置文件 (若目录含 default.nix 则视为叶子模块，仅导入该文件不再递归)
-  b. 所有 guarded 子目录中的 options.nix 配置文件
-  c. 所有 enable = true 的 guarded 子目录中的 nix 配置文件
-
-示范:
+框架将目录分为两类：**Guarded** (含 `options.nix`) 和 **Unguarded** (普通目录)。
 
 ```
 modules/
+├── base/                 # Unguarded: 纯组织容器，会递归扫描
+│   ├── shell.nix         # -> 自动导入
+│   └── users.nix         # -> 自动导入
 ├── services/
-│   └── vaultwarden/
-│       ├── options.nix
-│       ├── config.nix
-│       └── more-config.nix
-├── programs/
-│   └── hello/
-│       ├── options.nix
-│       └── config.nix
+│   └── web-server/       # Guarded: 包含 options.nix
+│       ├── options.nix   # -> 总是导入
+│       ├── config.nix    # -> 仅当 config.services.web-server.enable = true 时导入
+│       └── sub-helper/   # -> 不会被扫描！(递归在此终止)
 └── personal/
-    └── config.nix
+    └── config.nix        # -> 自动导入
 ```
 
-若用户配置为:
+**代码示例**
 
-```nix
-{
-  services.vaultwarden.enable = true;
-}
-```
+定义一个 Guarded 模块 (`modules/services/web-server`):
 
-则将被自动导入的模块文件为:
-
-- modules/services/vaultwarden/options.nix
-- modules/services/vaultwarden/config.nix
-- modules/services/vaultwarden/more-config.nix
-- modules/programs/hello/options.nix
-- modules/personal/config.nix
-
-(Tips: 由于 modules/programs/hello/ 为 guarded 目录，且 enable = false，因此只有其 options.nix 文件被导入，而该目录下的 config.nix 文件则不会被导入)
-
-### 目录结构
-
-### 模块定义示例
-
-modules/services/my-service/options.nix:
-
-```nix
-{ config, lib, pkgs, ... }:
-with lib;
-{
-  # 默认会生成 enable, 无需手动定义
-  # enable = lib.mkEnableOption "My custom service";
-
-  # 默认会生成到 services.my-service 选项路径下, 无需手动定义前缀
-  port = lib.mkOption {
-    type = lib.types.port;
-    default = 8080;
-    description = "Port on which my-service should listen";
-  };
-
-  package = lib.mkOption {
-    type = lib.types.package;
-    default = pkgs.my-service;
-    description = "My service package to use";
-  };
-}
-```
-
-modules/services/my-service/config.nix:
-
-```nix
-{ config, lib, pkgs, ... }:
-{
-  # 默认会被包裹在 mkIf cfg.enable {} 中，无需手动实现
-  config = {
-    systemd.services.my-service = {
-      description = "My Custom Service";
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        ExecStart = "${cfg.package}/bin/my-service --port ${toString cfg.port}";
-        Restart = "always";
+1.  `options.nix`: 定义接口。注意 `enable` 选项会自动生成，无需手动定义。
+    ```nix
+    { lib, ... }:
+    {
+      # 自动生成: options.services.web-server.enable
+      options.services.web-server.port = lib.mkOption {
+        type = lib.types.port;
+        default = 8080;
       };
-    };
-  };
-}
-```
+    }
+    ```
 
-### 使用模块
+2.  `config.nix`: 实现逻辑。默认会被包裹在 `mkIf cfg.enable { ... }` 中。
+    ```nix
+    { config, pkgs, ... }:
+    {
+      # 无需手动写 config = lib.mkIf config.services.web-server.enable ...
+      systemd.services.web-server = {
+        script = "${pkgs.python3}/bin/python -m http.server ${toString config.services.web-server.port}";
+      };
+    }
+    ```
 
-在其他 NixOS 配置中使用：
+**使用模块**
+
+在 `hosts/my-machine/configuration.nix` 中：
 
 ```nix
-# hosts/my-host/configuration.nix
 {
-  # 模块会被自动导入，无需手动编写
-  # imports = [
-  #   ../modules/services/my-service/options.nix
-  #   ../modules/services/my-service/config.nix
-  # ];
-
-  services.my-service = {
-    enable = true;
-    port = 9090;
-  };
+  # modules/ 下的模块已被自动发现并导入
+  services.web-server.enable = true;
+  services.web-server.port = 9000;
 }
 ```
 
-**Flake FHS 优势**：
-- **自动发现**：无需手动维护模块列表
-- **命名约定**：模块选项名称与目录名对应
-- **标准化**：与 Nixpkgs 兼容性好, 代码稍加改动就可以贡献到上游
-- **高性能**：实现部分加载机制，在存在大量模块时应可以显著减少eval时间
+---
 
-Tips: 模块部分加载机制 的 实现原理详见 [设计文档](./modules-partial-load-design.md)
+### <span id="hosts">hosts/ - 系统配置</span>
 
-## 🏗️ <span id="dir-hosts">hosts/ - NixOS 配置</span>
+用于定义具体的机器配置（Entrypoints）。
 
-`hosts/` (或 `profiles/`) 目录用于定义完整的 NixOS 系统配置，每个子目录对应一个 `nixosConfigurations` 输出。
-
-### 目录结构
+**目录结构**
 
 ```
 hosts/
-├── server/
-│   └── configuration.nix
-├── desktop/
-│   ├── hardware-configuration.nix
-│   └── configuration.nix
+├── server-a/
+│   └── configuration.nix   # -> nixosConfigurations.server-a
 ├── laptop/
-│   ├── hardware-configuration.nix
-│   └── configuration.nix
-└── shared/
-    ├── base-system.nix
-    ├── networking.nix
-    └── users.nix
+│   ├── hardware.nix
+│   └── configuration.nix   # -> nixosConfigurations.laptop
+└── shared/                 # (约定) 存放共享配置
+    └── common.nix
 ```
 
-### 配置定义示例
+**代码示例**
+
+`hosts/laptop/configuration.nix`:
 
 ```nix
-# hosts/desktop/configuration.nix
-{ config, lib, pkgs, modulesPath, ... }:
-
+{ pkgs, ... }:
 {
   imports = [
-    # 共享配置
-    ../shared/base-system.nix
-    ../shared/networking.nix
-    ../shared/users.nix
+    ./hardware.nix
+    ../shared/common.nix  # 手动导入共享配置
   ];
 
-  # 桌面特定配置
-  services.xserver.enable = true;
-  services.xserver.desktopManager.gnome.enable = true;
-
-  environment.systemPackages = with pkgs; [
-    firefox
-    libreoffice
-    gimp
-  ];
+  networking.hostName = "laptop";
+  environment.systemPackages = [ pkgs.firefox ];
 }
 ```
 
-### 📁 shared/ 目录
-
-`shared/` 用于存放多个 hosts 之间共享的配置片段：
-
-```nix
-# hosts/shared/base-system.nix
-{ config, lib, pkgs, ... }:
-
-{
-  # 基础系统配置
-  time.timeZone = "Asia/Shanghai";
-  i18n.defaultLocale = "zh_CN.UTF-8";
-
-  # 基础软件包
-  environment.systemPackages = with pkgs; [
-    vim
-    git
-    curl
-    wget
-  ];
-}
-```
-
-`shared/` 目录中的配置需要由用户在 configuration.nix 中手动引入.
-
-从 Flake FHS 的角度看，这个目录并不特殊，理论上你可以用任意名字的子目录来做这件事，只要不被 Flake FHS 自动发现为特殊目录即可。
-
-### 使用方法
-
+构建命令：
 ```bash
-# 构建桌面系统
-nixos-rebuild build --flake .#desktop
-
-# 构建服务器系统
-nixos-rebuild build --flake .#server
+nixos-rebuild build --flake .#laptop
 ```
 
-**设计理念**：
-- **模块化**：共享配置与特定配置分离
-- **复用性**：通过 `shared/` 减少代码重复
-- **一致性**：所有配置遵循相同结构
+---
 
-## 🚀 <span id="dir-apps">apps/ - 应用程序</span>
+### <span id="apps">apps/ - 应用程序</span>
 
-`apps/` 目录定义可直接运行的应用程序，每个子目录对应一个 `flake outputs.apps` 项。
+定义可通过 `nix run` 直接运行的目标。
 
-**设计说明**：`apps/` 目录与 `pkgs/` 目录使用相同的 `package.nix` 结构。Flake FHS 会自动为每个包生成对应的 `apps` 输出，使用以下规则推断程序入口点（优先级从高到低）：
+**目录结构**
 
-1. `meta.mainProgram` - 显式指定的程序名
-2. `pname` - 包名称（如果存在）
-3. `name` 的第一部分 - 去除版本号后的包名（如 `hello-2.10` → `hello`）
+`apps/` 目录采用与 `pkgs/` 相同的目录结构（`package.nix`）。Flake FHS 会加载这些包，并自动推断程序入口点（`mainProgram`）来生成 app。
 
-这意味着同一个定义可以同时作为 `packages` 和 `apps` 使用，且通常无需显式指定 `meta.mainProgram`。
+**自动推断机制**
 
-### 目录结构
+在 `apps/` 目录下的 `package.nix` 中，框架会尝试自动推断程序的入口点。当然，你也可以通过设置 `meta.mainProgram` 来手动指定。推断优先级如下：
+1.  `meta.mainProgram` (显式指定)
+2.  `pname`
+3.  `name` (去除版本号后缀)
+
+**代码示例**
 
 ```
 apps/
-├── hello/
-│   └── package.nix
-├── deploy/
-│   ├── package.nix
-│   └── deploy.sh
-└── backup/
-    ├── package.nix
-    └── backup.py
+└── deploy/
+    └── package.nix
 ```
 
-### 应用定义示例
-
+`apps/deploy/package.nix`:
 ```nix
-# apps/hello/package.nix
-{ lib, writeShellScriptBin }:
-
-writeShellScriptBin "hello-app" ''
-  #!${writeShellScriptBin}
-  echo "Hello from Flake FHS!"
-  echo "Current time: $(date)"
+{ writeShellScriptBin }:
+writeShellScriptBin "deploy" ''
+  echo "Deploying..."
 ''
-// {
-  meta.description = "A simple hello app";
-  # meta.mainProgram 可选，writeShellScriptBin 会自动设置
-}
 ```
 
-**注意**：`writeShellScriptBin` 会自动将脚本名称设置为 `meta.mainProgram`，因此无需手动指定。
-
-对于使用 `mkDerivation` 打包的更复杂应用：
-
-```nix
-# apps/deploy/package.nix
-{ lib, stdenv, makeWrapper }:
-
-stdenv.mkDerivation {
-  pname = "deploy";
-  version = "1.0.0";
-
-  src = ./.;
-
-  buildInputs = [ makeWrapper ];
-
-  installPhase = ''
-    mkdir -p $out/bin
-    cp deploy.sh $out/bin/deploy
-    chmod +x $out/bin/deploy
-  '';
-
-  meta.description = "Deployment helper for Flake FHS projects";
-  # meta.mainProgram 可选，会自动从 pname 推断为 "deploy"
-}
-```
-
-**推断规则**：
-- 如果 `pname = "deploy"`，则 `mainProgram` 自动推断为 `"deploy"`
-- 如果 `name = "myapp-1.2.3"` 且没有 `pname`，则 `mainProgram` 自动推断为 `"myapp"`
-- 显式设置 `meta.mainProgram` 可覆盖自动推断
-
-### 使用方法
-
+运行命令：
 ```bash
-# 运行应用 (使用 apps 输出)
-nix run .#hello
-
-# 或者先构建再运行 (使用 packages 输出)
-nix build .#hello
-./result/bin/hello-app
-
-# 查看所有可用应用和包
-nix flake show
+nix run .#deploy
 ```
 
-## 🔧 <span id="dir-shells">shells/ - 开发环境</span>
+---
 
-`shells/` 目录定义开发环境，每个 `.nix` 文件对应一个 `flake outputs.devShells` 项。
+### <span id="shells">shells/ - 开发环境</span>
 
-### 目录结构
+定义开发环境 (`devShells`)。
 
-```
-shells/
-├── default.nix
-├── python.nix
-└── rust.nix
-```
+**代码示例**
 
-### 开发环境定义示例
+`shells/rust.nix` (映射为 `devShells.<system>.rust`):
 
 ```nix
-# shells/default.nix
 { pkgs }:
-
-{
-  # 默认开发环境
-  default = pkgs.mkShell {
-    name = "flake-fhs-dev";
-
-    buildInputs = with pkgs; [
-      git
-      vim
-      curl
-      nixfmt
-    ];
-
-    shellHook = ''
-      echo "🚀 Welcome to Flake FHS development environment!"
-      echo "Available commands: git, vim, curl, nixfmt"
-    '';
-  };
-}
-```
-
-```nix
-# shells/rust.nix
-{ pkgs }:
-
 pkgs.mkShell {
   name = "rust-dev";
-
-  buildInputs = with pkgs; [
-    rustc
-    cargo
-    rust-analyzer
-    clippy
-  ];
-
-  shellHook = ''
-    echo "🦀 Rust development environment ready!"
-    cargo --version
-  '';
+  buildInputs = with pkgs; [ cargo rustc ];
 }
 ```
 
-### 使用方法
-
-```bash
-# 进入默认开发环境
-nix develop
-
-# 进入特定开发环境
-nix develop .#rust
-
-# 在开发环境中运行命令
-nix develop .#python --command python --version
-```
-
-## 📋 <span id="dir-templates">templates/ - 项目模板</span>
-
-`templates/` 目录提供项目模板，用于快速初始化新项目。
-
-### 目录结构
-
-```
-templates/
-├── simple-python/
-│   ├── flake.nix
-│   ├── README.md
-│   └── src/
-│       └── main.py
-├── rust-cli/
-│   ├── flake.nix
-│   ├── Cargo.toml
-│   └── src/
-│       └── main.rs
-└── nixos-module/
-    ├── flake.nix
-    └── modules/
-        └── example/
-            └── options.nix
-```
-
-### 使用方法
-
-```bash
-# 使用模板创建新项目
-nix flake init --template .#simple-python
-nix flake init --template .#rust-cli
-
-# 查看可用模板
-nix flake show
-```
-
-## 🛠️ <span id="dir-lib">lib/ - 辅助函数库</span>
-
-`lib/` (或 `utils/`, `tools/`) 目录定义可在其他地方引用的辅助函数和工具。这些函数会被合并到 `flake outputs.lib` 中，并注入到 `pkgs.lib` 中以便在其他地方使用。
-
-### 目录结构
-
-```
-lib/
-├── list.nix
-└── file.nix
-```
-
-### 函数库示例
+`shells/default.nix` (映射为默认的 `nix develop` 环境):
 
 ```nix
-# lib/list.nix
-{
-  join = xs: builtins.concatList xs
+{ pkgs }:
+pkgs.mkShell {
+  inputsFrom = [ (import ../pkgs/my-app/package.nix { inherit pkgs; }) ];
 }
 ```
 
-### 使用方法
+---
 
-在 nixosConfigurations.nix 或其他模块中使用：
+### <span id="checks">checks/ - 测试与检查</span>
 
-```nix
-{ lib, ...}:
-{
-  # Flake FHS 会将自定义的 lib 注入到 pkgs.lib 中
-  xs = lib.list.join [[1 2 3] [4 5]];
-}
-```
+用于 `nix flake check`。
 
-## ✅ <span id="dir-checks">checks/ - 检查和测试</span>
-
-`checks/` 目录支持文件模式和目录模式的混合结构：
+**目录结构**
 
 ```
 checks/
-├── fmt.nix                          → checks.<system>.fmt
-├── unit/                             # namespace
-│   └── string-utils/                 # name
-│       └── default.nix               → checks.<system>."unit/string-utils"
-└── integration/                      # namespace
-    └── api-tests/                    # name
-        └── default.nix               → checks.<system>."integration/api-tests"
+├── fmt.nix                  # 文件模式 -> checks.fmt
+└── integration/             # 目录模式
+    └── default.nix          # -> checks.integration
 ```
 
-### 设计规则
-
-- **文件模式**: 顶层 `.nix` 文件（`default.nix` 除外）
-- **目录模式**: 递归查找包含 `default.nix` 的子目录
-- **命名空间**: 不包含 `default.nix` 的目录用于组织
-- **优先级**: 文件优先于目录，避免名称冲突
-
-### 检查定义示例
+**代码示例**
 
 `checks/fmt.nix`:
-```nix
-{ pkgs, lib, ... }:
 
-pkgs.runCommand "lint-check" {
-  nativeBuildInputs = [ pkgs.nixfmt-tree ];
+```nix
+{ pkgs }:
+pkgs.runCommand "check-fmt" {
+  buildInputs = [ pkgs.nixfmt ];
 } ''
-  echo "🔍 Running format checks..."
-  treefmt --fail-on-change
+  nixfmt --check ${./.}
   touch $out
 ''
 ```
 
-### 使用方法
-
-```bash
-# 运行所有检查
-nix flake check
-
-# 运行特定检查
-nix flake check .#lint
-nix flake check .#unit-string-utils
-
-# 查看所有检查
-nix flake show
-```
-
-### 优先级处理
-
-同时存在 `checks/test.nix` 和 `checks/test/default.nix` 时，文件模式优先。
+---
 
 ## 🧹 Formatter - 代码格式化
 
-Flake FHS 默认配置了 `formatter` 输出，使用 `nixfmt-tree` 作为格式化工具。
+Flake FHS 默认配置了 `formatter` 输出，支持 `nix fmt` 命令。
+
+**默认行为**
+
+Flake FHS 集成了 `treefmt`。它会自动检测根目录下的 `treefmt.nix` 或 `treefmt.toml` 配置文件，并据此生成 formatter。
+
+*   **存在 `treefmt.nix`**: 优先使用。若 `inputs` 中包含 `treefmt-nix`，则通过该库集成；否则直接加载 Nix 配置。
+*   **存在 `treefmt.toml`**: 使用该 TOML 文件作为配置。
+*   **无配置文件**: 直接使用默认的 `pkgs.treefmt`（运行时可能需要自行查找配置）。
+
+**使用方法**
 
 ```bash
-# 格式化项目中的所有 Nix 文件
+# 格式化项目中的所有文件
 nix fmt
 ```
 
-## mkFlake 配置项
+---
 
-`mkFlake` 函数使用 Nix 模块系统来管理配置，提供了类型安全和可组合的配置方式。
+### <span id="lib">lib/ - 函数库</span>
 
-### 基本用法
+定义在 `lib/` 下的函数会被合并，并通过 `pkgs.lib` 在整个 flake 上下文中可用。
 
-```nix
-# 简洁用法（使用默认配置）
-flake-fhs.lib.mkFlake { inherit inputs; } { }
+**代码示例**
 
-# 或直接传入空配置
-flake-fhs.lib.mkFlake { inherit inputs; } { }
-```
-
-### 配置选项
-
-`mkFlake` 接受两个参数：上下文参数和配置模块。
-
-#### 上下文参数（第一个参数）
-
-| 参数 | 类型 | 描述 | 默认值 |
-|------|------|------|--------|
-| `self` | attrset | 当前 flake 的引用 | `inputs.self` |
-| `inputs` | attrset | 所有 flake 输入 | 必需 |
-| `nixpkgs` | attrset | Nixpkgs 输入 | `inputs.nixpkgs` |
-| `lib` | attrset | Nix 函数库 | `nixpkgs.lib` |
-
-#### 配置模块选项（第二个参数）
-
-| 选项 | 类型 | 默认值 | 描述 |
-|------|------|--------|------|
-| `systems` | list of str | `lib.systems.flakeExposed` | 支持的系统架构列表 |
-| `nixpkgs.config` | attrs | `{ allowUnfree = true; }` | Nixpkgs 配置选项 |
-| `layout` | submodule | 见下方说明 | 目录布局配置 |
-| `nixosConfigurations.specialArgs` | function | `_: {}` | 传递给 nixosSystem 的 extra specialArgs (`system -> attrs`) |
-| `nixosConfigurations.perHost.specialArgs` | function | `_: {}` | 针对特定 host 的 extra specialArgs (`hostName -> attrs`) |
-| `flake` | attrs | `{ }` | 额外的 flake outputs（即将支持） |
-| `perSystem` | attrs | `{ }` | 每个系统的额外配置（即将支持） |
-
-#### layout 配置项
-
-`layout` 选项控制各个输出类型的目录映射，支持两种形式：
-
-1. **简写形式**：直接指定目录列表
-   ```nix
-   layout.roots = [ "" "/nix" ]
-   ```
-
-2. **完整形式**：使用 `subdirs` 字段
-   ```nix
-   layout.roots.subdirs = [ "" "/nix" ]
-   layout.packages.subdirs = [ "pkgs" "packages" ]
-   ```
-
-### 配置示例
-
-#### 基础配置
-
+`lib/math.nix`:
 ```nix
 {
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-fhs.url = "github:luochen1990/flake-fhs";
-  };
-
-  outputs = inputs@{ flake-fhs, ... }:
-    flake-fhs.lib.mkFlake { inherit inputs; } { };
+  add = a: b: a + b;
 }
 ```
 
-#### 完整配置
-
+在其他地方使用：
 ```nix
+# anywhere in the flake
+{ pkgs, ... }:
 {
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    flake-fhs.url = "github:luochen1990/flake-fhs";
-  };
-
-  outputs = inputs@{ flake-fhs, ... }:
-    flake-fhs.lib.mkFlake { inherit inputs; } {
-      systems = [ "x86_64-linux" "x86_64-darwin" ];
-      nixpkgs.config = {
-        allowUnfree = true;
-        permittedInsecurePackages = [ ];
-      };
-      layout.roots = [ "" "/nix" ];
-    };
+  # pkgs.lib 包含了自定义的函数
+  value = pkgs.lib.math.add 1 2;
 }
 ```
 
-#### 多根项目配置
+---
+
+## 3. mkFlake 配置
+
+`mkFlake` 函数接受两个参数：上下文 (`inputs`, `self` 等) 和 配置模块。
 
 ```nix
 flake-fhs.lib.mkFlake { inherit inputs; } {
-  layout.roots = [ "" "/nix" ];
+  # 配置项
 }
 ```
 
-### 参数说明
+### 常用配置项
 
-- **systems**: 默认包含 x86_64-linux, x86_64-darwin, aarch64-linux, aarch64-darwin 等主流架构
-- **nixpkgs.config**: 全局 Nixpkgs 配置，会影响所有系统上下文中的 pkgs 实例
-- **layout.roots**: 指定项目根目录列表，支持多个根目录。空字符串 `""` 表示项目根目录
-- **模块系统**: 使用 `lib.evalModules` 实现，提供类型安全和配置验证
+| 选项 | 类型 | 默认值 | 说明 |
+| :--- | :--- | :--- | :--- |
+| `systems` | list | standard systems | 支持的系统架构列表 (x86_64-linux, aarch64-darwin 等) |
+| `nixpkgs.config` | attrs | `{ allowUnfree = true; }` | 传递给 nixpkgs 的配置 |
+| `layout.roots` | list | `["" "/nix"]` | 项目根目录列表。支持从多个目录聚合内容。 |
+| `nixosConfigurations.specialArgs` | lambda | `_: {}` | 全局传递给所有 hosts 的 specialArgs |
+| `nixosConfigurations.perHost.specialArgs` | lambda | `_: {}` | 针对特定 host 的 extra specialArgs (`hostName -> attrs`) |
+
+### 布局配置 (Layout)
+
+你可以通过 `layout` 选项自定义各类型 output 的源目录。例如：
+
+```nix
+layout.packages.subdirs = [ "pkgs" "my-packages" ];
+```
+
+这意味着框架将同时扫描 `pkgs/` 和 `my-packages/` 目录来寻找包定义。
 
 ## 🔗 最佳实践
 
-### 项目组织
+### 1. 项目组织
 
-1. **遵循约定**：按照 Flake FHS 的目录结构组织代码
-2. **保持简洁**：每个文件专注单一职责
-3. **文档先行**：为复杂功能编写说明文档
+*   **遵循约定**：尽量使用框架默认的目录结构，减少自定义配置。
+*   **模块化**：将复杂的系统配置拆分为小的、可复用的模块 (`modules/`)。
+*   **按需导出**：利用 `pkgs/default.nix` 隐藏内部辅助包，保持对外接口的整洁。
 
-### 开发流程
+### 2. 开发流程
 
-1. **快速开始**：使用模板快速创建项目
-2. **增量开发**：边开发边运行 `nix flake check`
-3. **持续集成**：利用 `checks/` 确保代码质量
+*   **快速开始**：总是使用模板 (`nix flake init --template ...`) 来初始化新项目或组件。
+*   **持续检查**：养成运行 `nix flake check` 的习惯，配合 `checks/` 目录下的测试用例。
+*   **格式化**：使用 `nix fmt` 保持代码风格统一。
 
-### 性能优化
+### 3. 性能优化
 
-1. **按需导出**：使用 `pkgs/default.nix` 控制包可见性
-2. **共享依赖**：通过 `profiles/shared/` 减少重复
-3. **模块化设计**：保持模块的独立性, 添加 options.nix 以支持部分加载
-
+*   **部分加载**：对于拥有大量 NixOS 模块的项目，Flake FHS 的模块加载机制（Guarded Modules）可以显著减少 evaluation 时间。确保将独立的模块放入带有 `options.nix` 的子目录中，这样只有在 `enable = true` 时才会加载其配置。
