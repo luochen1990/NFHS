@@ -31,50 +31,85 @@ let
     isEmptyFile
     ;
 
-  loadModule = args: m: if isFunction m then m args else m;
-
-  setDefaultModuleLocation =
-    if builtins.hasAttr "setDefaultModuleLocation" lib then
-      lib.setDefaultModuleLocation
-    else if
-      builtins.hasAttr "modules" lib && builtins.hasAttr "setDefaultModuleLocation" lib.modules
-    then
-      lib.modules.setDefaultModuleLocation
-    else
-      (file: m: m);
-
-  # args: [ { argName = isOptional; ... } ... ]
-  # Returns: { argName = isOptional; ... } where isOptional is true only if ALL are true (AND logic).
-  # If an arg is mandatory (false) in ANY module, it becomes mandatory (false) in the result.
-  mergeFnArgs =
-    argsList:
+  # warpModule :: [String] -> (Path | Module) -> Module
+  warpModule =
+    modPath: module:
     let
-      # Get all unique argument names
-      allKeys = lib.unique (concatLists (map builtins.attrNames argsList));
-      # Determine if a key should be optional.
-      # It is optional (true) ONLY if it is optional in ALL signatures that contain it?
-      # Wait.
-      # Module A: { foo }: ... (foo mandatory/false)
-      # Module B: { foo ? 1 }: ... (foo optional/true)
-      # Merged: foo should be mandatory (false), because A needs it.
-      # Logic: default to true (optional), AND with specific value.
-      # If missing from a module?
-      # Module C: { bar }: ... (foo missing)
-      # If C doesn't ask for foo, it doesn't care.
-      # So we only care about modules that HAVE the key.
-      # If A has foo=false, then foo is false.
+      isPath = builtins.isPath module || builtins.isString module;
+      file = if isPath then module else null;
+      m = if isPath then import module else module;
 
-      mergeKey =
-        k:
+      # Use explicit _file attribute instead of setDefaultModuleLocation
+      # to ensure we have full control over the functor structure.
+      # If we attach _file to a functor, it might confuse isFunction in some contexts.
+      # So we wrap it in an attrset module that imports the functor.
+      attachFile =
+        if file != null then
+          (x: {
+            imports = [ x ];
+            _file = file;
+          })
+        else
+          (x: x);
+
+      processContent =
+        content: config: lib:
         let
-          # Extract the isOptional value for key k from all args that have it
-          vals = lib.catAttrs k argsList;
+          originalImports = content.imports or [ ];
+          newImports = map (warpModule modPath) originalImports;
+
+          originalOptions = content.options or { };
+          newOptions = if originalOptions == { } then { } else lib.setAttrByPath modPath originalOptions;
+
+          explicitConfig = content.config or { };
+          implicitConfig = removeAttrs content [
+            "imports"
+            "options"
+            "config"
+            "_file"
+            "meta"
+            "disabledModules"
+            "__functor"
+            "__functionArgs"
+          ];
+          mergedConfig = explicitConfig // implicitConfig;
         in
-        # If any module says it's mandatory (false), then it is mandatory.
-        # So we want to check if ALL are true.
-        lib.all (x: x) vals;
+        {
+          imports = newImports;
+          options = newOptions;
+          config = lib.mkIf (lib.attrsets.getAttrFromPath (modPath ++ [ "enable" ]) config) mergedConfig;
+        };
     in
-    lib.genAttrs allKeys mergeKey;
+    if builtins.isFunction m then
+      let
+        f =
+          args@{
+            config,
+            lib,
+            ...
+          }:
+          processContent (m args) config lib;
+        fArgs = builtins.functionArgs m;
+      in
+      attachFile {
+        __functor = self: f;
+        __functionArgs = fArgs;
+      }
+    else
+      let
+        f =
+          {
+            config,
+            lib,
+            ...
+          }:
+          processContent m config lib;
+      in
+      attachFile {
+        __functor = self: f;
+        # For non-function modules converted to functions, we don't need __functionArgs
+        # because the lambda signature { config, lib, ... } is sufficient.
+      };
 
   # mkOptionsModule : GuardedTreeNode -> Module
   mkOptionsModule =
@@ -82,69 +117,26 @@ let
     let
       modPath = it.modPath;
       options-dot-nix = it.path + "/options.nix";
-      opts = if (isEmptyFile options-dot-nix) then { } else import options-dot-nix;
-      userArgs = if isFunction opts then builtins.functionArgs opts else { };
+      enableOptionModule = {
+        options = lib.setAttrByPath modPath {
+          enable = lib.mkEnableOption (concatStringsSep "." modPath);
+        };
+      };
+      userModule = if isEmptyFile options-dot-nix then { } else options-dot-nix;
     in
-    lib.setFunctionArgs (
-      moduleArgs:
-      let
-        rawOptions = if isFunction opts then opts moduleArgs else opts;
-        virtualEnableOption = lib.mkEnableOption (concatStringsSep "." modPath);
-        filledOptions = {
-          enable = virtualEnableOption;
-        }
-        // rawOptions;
-      in
-      setDefaultModuleLocation options-dot-nix {
-        options = lib.attrsets.setAttrByPath modPath filledOptions;
-      }
-    ) userArgs;
+    {
+      imports = [
+        enableOptionModule
+        (warpModule modPath userModule)
+      ];
+    };
 
   # mkDefaultModule : GuardedTreeNode -> Module
   mkDefaultModule =
     it:
-    let
-      # Pre-load modules to inspect signatures
-      importedModules = map import it.unguardedConfigPaths;
-
-      # Calculate merged signature
-      # If any module requires an arg (mandatory), the wrapper must require it.
-      userArgs = mergeFnArgs (
-        map (m: if isFunction m then builtins.functionArgs m else { }) importedModules
-      );
-
-      # Wrapper must also accept lib and config for its own logic
-      wrapperArgs = userArgs // {
-        lib = false;
-        config = false;
-      };
-
-      default-dot-nix = it.path + "/default.nix";
-      generated-default-dot-nix = it.path + "/.generated.default.nix";
-      location = if pathExists default-dot-nix then default-dot-nix else generated-default-dot-nix;
-    in
-    setDefaultModuleLocation location (
-      lib.setFunctionArgs (
-        args@{
-          lib,
-          config,
-          ...
-        }:
-        {
-          config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable (
-            lib.mkMerge (
-              map (
-                m:
-                let
-                  r = loadModule args m;
-                in
-                r.config or r
-              ) importedModules
-            )
-          );
-        }
-      ) wrapperArgs
-    );
+    warpModule it.modPath {
+      imports = it.unguardedConfigPaths;
+    };
 
   mkGuardedTree =
     rootModulePaths:
