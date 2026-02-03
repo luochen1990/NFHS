@@ -1,13 +1,12 @@
 {
   config,
   lib,
-  pkgs,
   ...
 }:
 
 with lib;
 {
-  config = mkIf config.services.my-service.enable {
+  config = {
     # Create user and group
     users.users.${config.services.my-service.user} =
       mkIf (config.services.my-service.user == "myservice")

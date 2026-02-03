@@ -132,7 +132,15 @@ let
         }:
         {
           config = lib.mkIf (lib.attrsets.getAttrFromPath it.modPath config).enable (
-            lib.mkMerge (map (loadModule args) importedModules)
+            lib.mkMerge (
+              map (
+                m:
+                let
+                  r = loadModule args m;
+                in
+                r.config or r
+              ) importedModules
+            )
           );
         }
       ) wrapperArgs
