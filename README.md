@@ -33,27 +33,35 @@ Flake FHS 将文件系统的目录结构直接映射为 Flake Outputs：
 
     Flake FHS 提供了针对不同场景的模板：
 
+    标准模板 (Standard): 
+    创建完整目录树，使用标准目录命名 (packages, nixosModules, nixosConfigurations, ...)
+
     ```bash
-    # 标准模板 (Standard)
-    # 包含完整功能，使用标准目录命名 (packages, nixosModules, ...)
     nix flake init --template github:luochen1990/flake-fhs#std
+    ```
 
-    # 简短模板 (Short)
-    # 包含完整功能，使用简短目录命名 (pkgs, modules, ...)
+    简短模板 (Short): 
+    创建完整目录树，使用简短目录命名 (pkgs, modules, hosts, ...)
+
+    ```bash
     nix flake init --template github:luochen1990/flake-fhs#short
+    ```
 
-    # 最小模板 (Zero)
-    # 仅包含 flake.nix，适合从零开始构建
+    最小模板 (Zero): 
+    不创建目录树, 仅包含 flake.nix，适合从零开始构建
+    ```bash
     nix flake init --template github:luochen1990/flake-fhs#zero
+    ```
 
-    # 项目内嵌模板 (Project)
-    # 适用于非 Nix 主导的项目 (如 Python/Node.js 项目)，将 Nix 配置隔离在 ./nix 目录下
+    项目内嵌模板 (Project): 
+    适用于非 Nix 主导的项目 (如 Python/Node.js 项目)，将 Nix 配置隔离在 ./nix 目录下
+    ```bash
     nix flake init --template github:luochen1990/flake-fhs#project
     ```
 
 2.  **配置 `flake.nix`**
 
-    最简配置仅需一行：
+    典型配置如下 (风格类似 flake-parts)：
 
     ```nix
     {
@@ -62,7 +70,46 @@ Flake FHS 将文件系统的目录结构直接映射为 Flake Outputs：
         flake-fhs.url = "github:luochen1990/flake-fhs";
       };
 
-      outputs = inputs: inputs.flake-fhs.lib.mkFlake { inherit inputs; } { };
+      outputs = inputs@{ flake-fhs, ... }:
+        flake-fhs.lib.mkFlake { inherit inputs; } {
+          # 可选: 指定支持的系统架构列表
+          systems = [ "x86_64-linux" ];
+
+          # 可选: 传递给 nixpkgs 实例的全局配置
+          nixpkgs.config = {
+            allowUnfree = true;
+          };
+
+          # 可选: 类似 flake-parts 的对应选项, 在 flake-fhs 中它主要用来添加非标准的 flake outputs
+          flake = {
+            ...
+          }
+        };
+    }
+    ```
+
+    **渐进式迁移 (Progressive Migration)**
+
+    如果你已有一个庞大的 flake，不必一次性重构所有内容。你可以仅使用 `flake-fhs` 管理部分输出 (如 `packages`)，其余部分暂时保持原样, 以实现逐步迁移。
+
+    ```nix
+    {
+      # ... inputs ...
+
+      outputs = inputs@{ self, nixpkgs, flake-fhs, ... }:
+        let
+          # 1. 创建 flake-fhs 实例，但不直接作为 outputs 返回
+          fhs = flake-fhs.lib.mkFlake { inherit inputs; } { };
+        in
+        {
+          # 2. 从 flake-fhs 中“摘取”你想迁移的部分 (例如 packages)
+          packages = fhs.packages;
+
+          # 3. 其他部分保持原有的手动定义方式
+          nixosConfigurations.my-machine = nixpkgs.lib.nixosSystem {
+            # ... old config ...
+          };
+        };
     }
     ```
 

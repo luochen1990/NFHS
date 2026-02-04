@@ -87,7 +87,7 @@ python checks/template-validation/validators.py  # Manual integration test (Full
 ## Project Configuration
 
 ### lib.mkFlake Usage
-Typical flake.nix for users:
+Typical flake.nix for users (showing common options):
 ```nix
 {
   inputs = {
@@ -96,18 +96,18 @@ Typical flake.nix for users:
   };
 
   outputs = inputs@{ flake-fhs, ... }:
-    flake-fhs.lib.mkFlake { inherit inputs; } { };
-}
-```
+    flake-fhs.lib.mkFlake { inherit inputs; } {
+      # Optional: Explicitly specify systems (flake-parts style)
+      systems = [ "x86_64-linux" "x86_64-darwin" ];
 
-### Advanced Configuration
-```nix
-flake-fhs.lib.mkFlake { inherit inputs; } {
-  systems = [ "x86_64-linux" "x86_64-darwin" ];
-  nixpkgs.config = {
-    allowUnfree = true;
-  };
-  layout.roots = [ "" "/nix" ];
+      # Optional: Nixpkgs configuration
+      nixpkgs.config = {
+        allowUnfree = true;
+      };
+
+      # Optional: Source roots
+      # layout.roots = [ "" "/nix" ];
+    };
 }
 ```
 
