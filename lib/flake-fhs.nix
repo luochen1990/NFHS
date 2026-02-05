@@ -40,47 +40,64 @@ let
   # ================================================================
   # warpModule :: [String] -> (Path | Module) -> Module
   warpModule =
-    modPath: module:
+    optionsMode: modPath: module:
     let
       isPath = builtins.isPath module || builtins.isString module;
       file = if isPath then module else null;
-      autoEnable = file != null && baseNameOf (toString file) == "options.nix";
-      m = if isPath then if isEmptyFile module then { } else import module else module;
+      raw = if isPath then if isEmptyFile module then { } else import module else module;
 
-      # Use explicit _file attribute instead of setDefaultModuleLocation
-      # to ensure we have full control over the functor structure.
-      # If we attach _file to a functor, it might confuse isFunction in some contexts.
-      # So we wrap it in an attrset module that imports the functor.
-      attachFile =
-        if file != null then
-          (x: {
-            imports = [ x ];
-            _file = file;
-          })
+      # Check logic for Strict mode
+      checkStrict =
+        opts: path:
+        if opts == { } || path == [ ] then
+          true
         else
-          (x: x);
+          let
+            head = builtins.head path;
+          in
+          if builtins.hasAttr head opts && removeAttrs opts [ head ] == { } then
+            checkStrict opts.${head} (tail path)
+          else
+            false;
 
-      processContent =
-        content: config: lib:
+      # Core logic to transform module content
+      transform =
+        content:
+        {
+          config,
+          lib,
+          ...
+        }:
         let
-          originalImports = content.imports or [ ];
-          # NOTE: We must NOT recursively warp imports here.
-          # These imports may be external modules (e.g. from nixpkgs) that should not be warped.
-          # Warping them would break their logic (e.g. options._class for standard NixOS modules).
-          newImports = originalImports;
+          opts = content.options or { };
 
-          originalOptions = content.options or { };
-          optionsWithEnable =
-            if autoEnable && !(originalOptions ? enable) then
-              originalOptions
-              // {
-                enable = lib.mkEnableOption (concatStringsSep "." modPath);
-              }
+          # 1. Validation
+          _ =
+            if optionsMode == "strict" && !checkStrict opts modPath then
+              throw "Strict mode violation: options in ${toString (file)} must strictly follow the directory structure ${concatStringsSep "." modPath}"
             else
-              originalOptions;
+              null;
 
-          newOptions = if optionsWithEnable == { } then { } else lib.setAttrByPath modPath optionsWithEnable;
+          # 2. Nesting
+          nestedOpts = if optionsMode == "auto" && opts != { } then lib.setAttrByPath modPath opts else opts;
 
+          # 3. Enable Option
+          enablePath = modPath ++ [ "enable" ];
+          finalOpts =
+            if
+              file != null
+              && baseNameOf (toString file) == "options.nix"
+              && !lib.hasAttrByPath enablePath nestedOpts
+            then
+              lib.recursiveUpdate nestedOpts (
+                lib.setAttrByPath modPath {
+                  enable = lib.mkEnableOption (concatStringsSep "." modPath);
+                }
+              )
+            else
+              nestedOpts;
+
+          # 4. Config
           explicitConfig = content.config or { };
           implicitConfig = removeAttrs content [
             "imports"
@@ -95,58 +112,47 @@ let
           mergedConfig = explicitConfig // implicitConfig;
         in
         {
-          imports = newImports;
-          options = newOptions;
-          config = lib.mkIf (lib.attrsets.getAttrFromPath (modPath ++ [ "enable" ]) config) mergedConfig;
+          imports = content.imports or [ ];
+          options = finalOpts;
+          config = lib.mkIf (lib.attrsets.getAttrFromPath enablePath config) mergedConfig;
         };
+
+      # Wrap raw module into a functor
+      functor =
+        if builtins.isFunction raw then
+          {
+            __functor = self: args: transform (raw args) args;
+            __functionArgs = builtins.functionArgs raw;
+          }
+        else
+          {
+            __functor = self: args: transform raw args;
+          };
     in
-    if builtins.isFunction m then
-      let
-        f =
-          args@{
-            config,
-            lib,
-            ...
-          }:
-          processContent (m args) config lib;
-        fArgs = builtins.functionArgs m;
-      in
-      attachFile {
-        __functor = self: f;
-        __functionArgs = fArgs;
+    if file != null then
+      {
+        _file = file;
+        imports = [ functor ];
       }
     else
-      let
-        f =
-          {
-            config,
-            lib,
-            ...
-          }:
-          processContent m config lib;
-      in
-      attachFile {
-        __functor = self: f;
-        # For non-function modules converted to functions, we don't need __functionArgs
-        # because the lambda signature { config, lib, ... } is sufficient.
-      };
+      functor;
 
   # mkOptionsModule : GuardedTreeNode -> Module
   mkOptionsModule =
-    it:
+    optionsMode: it:
     let
       modPath = it.modPath;
       options-dot-nix = it.path + "/options.nix";
     in
     {
       imports = [
-        (warpModule modPath options-dot-nix)
+        (warpModule optionsMode modPath options-dot-nix)
       ];
     };
 
   # mkDefaultModule : GuardedTreeNode -> Module
-  mkDefaultModule = it: {
-    imports = map (warpModule it.modPath) it.unguardedConfigPaths;
+  mkDefaultModule = optionsMode: it: {
+    imports = map (warpModule optionsMode it.modPath) it.unguardedConfigPaths;
   };
 
   # ================================================================
@@ -251,13 +257,13 @@ let
       nextScope = if node.hasScope then (import scopePath) currentScope else currentScope;
 
       # 2. Evaluate Package
-      packagePath = node.path + "/package.nix";
+      package-dot-nix = node.path + "/package.nix";
       currentPkgs =
         if node.hasPackage then
           [
             {
               name = concatStringsSep "/" node.breadcrumbs;
-              value = nextScope.callPackage packagePath { };
+              value = nextScope.callPackage package-dot-nix { };
             }
           ]
         else
@@ -352,6 +358,16 @@ let
           description = "List of supported systems";
         };
 
+        optionsMode = lib.mkOption {
+          type = lib.types.enum [
+            "auto"
+            "strict"
+            "free"
+          ];
+          default = "strict";
+          description = "Mode for handling options.nix files: 'auto' (nest options under module path), 'strict' (check options match module path), 'free' (no restrictions)";
+        };
+
         nixpkgs.config = lib.mkOption {
           type = lib.types.attrs;
           default = {
@@ -418,6 +434,7 @@ let
       nixpkgsConfig ? {
         allowUnfree = true;
       },
+      optionsMode ? "strict",
       layout ? defaultLayout,
       nixosConfigurationsConfig ? { },
       ...
@@ -608,11 +625,11 @@ let
           concatFor moduleTree.guardedChildrenNodes (it: [
             {
               name = (concatStringsSep "." it.modPath) + ".options";
-              value = (mkOptionsModule it);
+              value = (mkOptionsModule optionsMode it);
             }
             {
               name = (concatStringsSep "." it.modPath) + ".config";
-              value = mkDefaultModule it;
+              value = mkDefaultModule optionsMode it;
             }
           ])
         )
@@ -637,9 +654,9 @@ let
               ++ moduleTree.unguardedConfigPaths
               ++ concatFor moduleTree.guardedChildrenNodes (it: [
                 # Options module (always imported)
-                (mkOptionsModule it)
+                (mkOptionsModule optionsMode it)
                 # Config module (guarded by enable option)
-                (mkDefaultModule it)
+                (mkDefaultModule optionsMode it)
               ]);
               # TODO: partial load
               # config = lib.evalModules {
@@ -831,6 +848,7 @@ in
           ;
 
         supportedSystems = config.systems;
+        optionsMode = config.optionsMode;
         nixpkgsConfig = config.nixpkgs.config;
         layout = config.layout;
         nixosConfigurationsConfig = config.nixosConfigurations;

@@ -56,7 +56,7 @@ The framework implements an advanced module loading system:
 - **Partial Loading**: Implements performance optimization by loading only necessary modules
 - **Auto-enable Options**: Automatically generates enable options for guarded modules (if not manually defined)
 - **Module Discovery**: Automatically discovers and imports modules based on directory structure
-- **Option Nesting**: Automatically nests options under module paths (e.g. `services/web-server/options.nix` -> `options.services.web-server.*`) and auto-generates `enable` option (if missing)
+- **Option Nesting**: Automatically nests options under module paths (default behavior, configurable via `optionsMode`) (e.g. `services/web-server/options.nix` -> `options.services.web-server.*`) and auto-generates `enable` option (if missing)
 
 ### Module Loading Rules
 1. All unguarded directory modules are imported
@@ -64,6 +64,12 @@ The framework implements an advanced module loading system:
    - Otherwise, all `.nix` files in the directory are imported and subdirectories are recursed
 2. All guarded directory `options.nix` files are imported
 3. Only enabled guarded modules (enable = true) import their config files
+
+### Options Processing Modes
+The `options.nix` processing behavior can be configured via `optionsMode`:
+- **strict** (default): No automatic nesting. Enforces that defined options strictly match the directory structure.
+- **auto**: Automatically nests options under the directory path (e.g. `foo/options.nix` -> `options.foo.*`) and auto-generates `enable` option.
+- **free**: No automatic nesting. Allows arbitrary option definitions.
 
 ## Code Quality Standards
 
