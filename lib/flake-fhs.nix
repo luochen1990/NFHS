@@ -455,17 +455,13 @@ let
       ) layout;
 
       # roots = [Path]
+
       roots = forFilter (layout.roots.subdirs or [ ]) (
         d:
-        if builtins.isPath d || lib.isDerivation d then
-          d
-        else if builtins.isString d && builtins.substring 0 1 d == "/" then
-          if pathExists d then d else null
-        else
-          let
-            p = self.outPath + ("/" + d);
-          in
-          if pathExists p then p else null
+        let
+          p = self.outPath + "/${flakeFhsLib.trimPath d}";
+        in
+        if pathExists p then p else null
       );
 
       # system related context

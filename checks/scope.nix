@@ -30,7 +30,9 @@ let
   testFlakeScope =
     flake-fhs.mkFlake
       {
-        inherit self;
+        self = {
+          outPath = scopedSource;
+        };
         inputs = {
           inherit self;
           nixpkgs = {
@@ -43,7 +45,7 @@ let
         # Override the root layout to point to our dynamic source
         layout = {
           roots = {
-            subdirs = [ scopedSource ];
+            subdirs = [ "" ];
           };
         };
       };

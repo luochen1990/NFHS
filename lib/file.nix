@@ -191,4 +191,15 @@ rec {
   # 扫描目录中具有指定后缀的文件，返回文件路径列表
   scanFilesBySuffix =
     suffix: dir: if builtins.pathExists dir then (findFilesRec (hasSuffix suffix) dir) else [ ];
+
+  # trimPath : Path -> String
+  trimPath =
+    path:
+    let
+      s = toString path;
+      len = builtins.stringLength s;
+      start = if len > 0 && builtins.substring 0 1 s == "/" then 1 else 0;
+      end = if len > start && builtins.substring (len - 1) 1 s == "/" then len - 1 else len;
+    in
+    builtins.substring start (end - start) s;
 }
