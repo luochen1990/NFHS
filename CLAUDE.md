@@ -14,7 +14,7 @@ The framework implements an automatic mapping from directory structure to flake 
 
 | Subdirectories (Aliases) | File Pattern | Special Files | Recursive | Generated Output | Nix Command |
 |---|---|---|:---:|---|---|
-| `packages` (`pkgs`) | `<name>/package.nix` | `default.nix` | ✅ | `packages.<system>.<name>` | `nix build .#<name>` |
+| `packages` (`pkgs`) | `<name>/package.nix` | `default.nix`, `scope.nix` | ✅ | `packages.<system>.<name>` | `nix build .#<name>` |
 | `nixosModules` (`modules`) | `<name>/...` | `options.nix`, `default.nix` | ✅ | `nixosModules.<name>` | - |
 | `nixosConfigurations` (`hosts`, `profiles`) | `<name>/configuration.nix` | - | ✅ | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
 | `apps` | `<name>/package.nix` | `default.nix` | ✅ | `apps.<system>.<name>` | `nix run .#<name>` |
@@ -22,6 +22,14 @@ The framework implements an automatic mapping from directory structure to flake 
 | `templates` | `<name>/` | `flake.nix` | ❌ | `templates.<name>` | `nix flake init --template <url>#<name>` |
 | `lib` (`utils`, `tools`) | `<name>.nix` | - | ✅ | `lib.<name>` | `nix eval .#lib.<name>` |
 | `checks` | `<name>.nix` | `default.nix` | ✅ | `checks.<system>.<name>` | `nix flake check .#<name>` |
+
+### Package Scope System
+
+The framework supports custom dependency scopes for packages via `scope.nix`:
+- **File**: `<dir>/scope.nix`
+- **Function**: `pkgs: newScope`
+- **Behavior**: The returned scope applies to `package.nix` in the current directory and recursively to subdirectories.
+- **Usage**: Essential for Python, Perl, and other language-specific package sets.
 
 ### Key Components
 
@@ -76,6 +84,7 @@ The framework implements an advanced module loading system:
 
 ### Template Validation System
 - **Core (Nix)**: `checks/template-validation/default.nix` implements a pure-Nix validator that mocks inputs to evaluate all templates against the current library code. It runs automatically via `nix flake check`.
+- **Feature Tests**: Standalone checks (e.g., `checks/flake-option.nix`, `checks/scope.nix`) validate specific library features by generating minimal flake structures in the Nix store.
 - **Integration (Python)**: `checks/template-validation/validators.py` simulates real-world usage by creating temporary directories, replacing URLs, and running actual Nix commands. Use this for deep integration testing.
 
 ### Running Tests

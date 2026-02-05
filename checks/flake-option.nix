@@ -38,7 +38,7 @@ let
         };
         flake = {
           testOutput = "success";
-          packages.${pkgs.system}.hello = pkgs.hello;
+          packages.${pkgs.stdenv.hostPlatform.system}.hello = pkgs.hello;
         };
       };
 
@@ -71,7 +71,7 @@ let
         # Use defaults which include "pkgs" directory
         flake = {
           # Override foo and add bar
-          packages.${pkgs.system} = {
+          packages.${pkgs.stdenv.hostPlatform.system} = {
             foo = pkgs.runCommand "foo-manual" { } "echo manual > $out";
             bar = pkgs.hello;
           };
@@ -85,21 +85,21 @@ pkgs.runCommand "check-flake-option" { } ''
     exit 1
   fi
 
-  if [ -z "${testFlake.packages.${pkgs.system}.hello}" ]; then
+  if [ -z "${testFlake.packages.${pkgs.stdenv.hostPlatform.system}.hello}" ]; then
     echo "FAILED: testFlake.packages.hello missing"
     exit 1
   fi
 
   echo "Checking testFlakeCollision output..."
   # Check override
-  FOO_OUT=$(cat ${testFlakeCollision.packages.${pkgs.system}.foo})
+  FOO_OUT=$(cat ${testFlakeCollision.packages.${pkgs.stdenv.hostPlatform.system}.foo})
   if [ "$FOO_OUT" != "manual" ]; then
     echo "FAILED: packages.foo should be overridden to 'manual', got '$FOO_OUT'"
     exit 1
   fi
 
   # Check merge (bar exists)
-  if [ -z "${testFlakeCollision.packages.${pkgs.system}.bar}" ]; then
+  if [ -z "${testFlakeCollision.packages.${pkgs.stdenv.hostPlatform.system}.bar}" ]; then
     echo "FAILED: packages.bar missing in collision flake"
     exit 1
   fi

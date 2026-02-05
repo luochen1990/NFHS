@@ -33,13 +33,43 @@ Flake FHS 是一个 Nix Flake 框架，旨在通过标准化的目录结构自�
 
 ```
 pkgs/
-├── hello/
-│   └── package.nix
-├── my-tool/
-│   ├── package.nix
-│   └── src/
-│       └── main.c
 └── default.nix  # (可选) 控制导出
+```
+
+**Scope (依赖作用域)**
+
+Flake FHS 支持通过 `scope.nix` 文件来定义当前目录下的依赖作用域。这对于集成 Python、Perl 等需要特定包集的生态系统非常有用。
+
+当框架扫描到 `scope.nix` 时，会加载它并将其应用到当前目录及其子目录中。
+
+*约定格式*: `pkgs: newScope` (接收当前 scope，返回新的 scope)
+
+**示例：集成 Python 包**
+
+```
+pkgs/
+└── python/
+    ├── scope.nix      # 定义作用域
+    ├── pandas/
+    │   └── package.nix
+    └── numpy/
+        └── package.nix
+```
+
+`pkgs/python/scope.nix`:
+```nix
+pkgs: pkgs.python311Packages
+```
+
+`pkgs/python/pandas/package.nix`:
+```nix
+# 这里可以直接请求 buildPythonPackage, numpy 等 Python 生态的包
+{ buildPythonPackage, numpy, ... }:
+
+buildPythonPackage {
+  pname = "pandas";
+  # ...
+}
 ```
 
 **代码示例**

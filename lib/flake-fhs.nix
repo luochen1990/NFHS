@@ -4,6 +4,9 @@
 # mkFlake function that auto-generates flake outputs from directory structure
 lib:
 let
+  # ================================================================
+  # Imports & Aliases
+  # ================================================================
   flakeFhsLib = lib;
   inherit (builtins)
     pathExists
@@ -11,6 +14,7 @@ let
     concatStringsSep
     tail
     concatLists
+    concatMap
     elem
     isFunction
     ;
@@ -31,6 +35,9 @@ let
     isEmptyFile
     ;
 
+  # ================================================================
+  # Module System Helpers
+  # ================================================================
   # warpModule :: [String] -> (Path | Module) -> Module
   warpModule =
     modPath: module:
@@ -142,6 +149,9 @@ let
     imports = map (warpModule it.modPath) it.unguardedConfigPaths;
   };
 
+  # ================================================================
+  # Tree Traversal (Guarded)
+  # ================================================================
   mkGuardedTree =
     rootModulePaths:
     let
@@ -203,6 +213,64 @@ let
         ;
     };
 
+  # ================================================================
+  # Tree Traversal (Scoped)
+  # ================================================================
+  mkScopedTreeNode =
+    {
+      path,
+      breadcrumbs,
+    }:
+    let
+      children = exploreDir [ path ] (it: rec {
+        hasScope = pathExists (it.path + "/scope.nix");
+        hasPackage = pathExists (it.path + "/package.nix");
+        isInteresting = hasScope || hasPackage;
+
+        pick = isInteresting;
+        into = !isInteresting;
+
+        out = mkScopedTreeNode {
+          path = it.path;
+          breadcrumbs = breadcrumbs ++ it.breadcrumbs';
+        };
+      });
+    in
+    {
+      inherit path breadcrumbs;
+      hasScope = pathExists (path + "/scope.nix");
+      hasPackage = pathExists (path + "/package.nix");
+      inherit children;
+    };
+
+  evalScopedTree =
+    currentScope: node:
+    let
+      # 1. Determine Scope
+      scopePath = node.path + "/scope.nix";
+      nextScope = if node.hasScope then (import scopePath) currentScope else currentScope;
+
+      # 2. Evaluate Package
+      packagePath = node.path + "/package.nix";
+      currentPkgs =
+        if node.hasPackage then
+          [
+            {
+              name = concatStringsSep "/" node.breadcrumbs;
+              value = nextScope.callPackage packagePath { };
+            }
+          ]
+        else
+          [ ];
+
+      # 3. Recurse
+      childrenPkgs = concatMap (evalScopedTree nextScope) node.children;
+    in
+    currentPkgs ++ childrenPkgs;
+
+  # ================================================================
+  # Configuration Schema
+  # ================================================================
   defaultLayout = {
     roots = {
       subdirs = [
@@ -262,15 +330,18 @@ let
         lib.mkOption {
           inherit description;
           inherit default;
-          type = lib.types.coercedTo (lib.types.listOf lib.types.str) (l: { subdirs = l; }) (
-            lib.types.submodule {
-              options.subdirs = lib.mkOption {
-                type = lib.types.listOf lib.types.str;
-                description = "List of subdirectories";
-                default = [ ];
-              };
-            }
-          );
+          type =
+            lib.types.coercedTo (lib.types.listOf (lib.types.either lib.types.str lib.types.path))
+              (l: { subdirs = l; })
+              (
+                lib.types.submodule {
+                  options.subdirs = lib.mkOption {
+                    type = lib.types.listOf (lib.types.either lib.types.str lib.types.path);
+                    description = "List of subdirectories or paths";
+                    default = [ ];
+                  };
+                }
+              );
         };
     in
     {
@@ -332,6 +403,9 @@ let
       };
     };
 
+  # ================================================================
+  # Core Logic
+  # ================================================================
   # Core implementation of mkFlake logic
   # Original implementation restored
   mkFlakeCore =
@@ -354,12 +428,18 @@ let
         elem x (value.subdirs)
       ) layout;
 
+      # roots = [Path]
       roots = forFilter (layout.roots.subdirs or [ ]) (
         d:
-        let
-          p = self.outPath + d;
-        in
-        if pathExists p then p else null
+        if builtins.isPath d || lib.isDerivation d then
+          d
+        else if builtins.isString d && builtins.substring 0 1 d == "/" then
+          if pathExists d then d else null
+        else
+          let
+            p = self.outPath + ("/" + d);
+          in
+          if pathExists p then p else null
       );
 
       # system related context
@@ -436,18 +516,27 @@ let
       #  templates/   # top-level subdirs marked by templates.nix
 
       packages = eachSystem (
-        # TODO: control package visibility with default.nix
         context:
         listToAttrs (
-          exploreDir roots (it: rec {
-            package-dot-nix = it.path + "/package.nix";
-            into = it.depth == 0 && partOf.packages it.name || it.depth >= 1;
-            pick = it.depth >= 1 && pathExists package-dot-nix;
-            out = {
-              name = concatStringsSep "/" (tail it.breadcrumbs');
-              value = context.pkgs.callPackage package-dot-nix { };
-            };
-          })
+          builtins.concatMap (
+            root:
+            let
+              validSubdirs = forFilter layout.packages.subdirs (
+                subdir:
+                let
+                  p = root + "/${subdir}";
+                in
+                if pathExists p then p else null
+              );
+            in
+            builtins.concatMap (
+              pkgRoot:
+              evalScopedTree context.pkgs (mkScopedTreeNode {
+                path = pkgRoot;
+                breadcrumbs = [ ];
+              })
+            ) validSubdirs
+          ) roots
         )
       );
 
