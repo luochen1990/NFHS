@@ -1,8 +1,10 @@
 {
   description = "Flake FHS";
 
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
   outputs =
-    inputs@{ self, nixpkgs, ... }:
+    inputs@{ nixpkgs, ... }:
     let
       utils' =
         nixpkgs.lib // (import ./lib/list.nix) // (import ./lib/dict.nix) // (import ./lib/file.nix);
