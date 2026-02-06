@@ -14,14 +14,28 @@ The framework implements an automatic mapping from directory structure to flake 
 
 | Subdirectories (Aliases) | File Pattern | Special Files | Recursive | Generated Output | Nix Command |
 |---|---|---|:---:|---|---|
-| `packages` (`pkgs`) | `<name>/package.nix` | `default.nix`, `scope.nix` | ✅ | `packages.<system>.<name>` | `nix build .#<name>` |
+| `packages` (`pkgs`) | `<name>.nix` or `<name>/package.nix` | `scope.nix` | ✅ | `packages.<system>.<name>` | `nix build .#<name>` |
 | `nixosModules` (`modules`) | `<name>/...` | `options.nix`, `default.nix` | ✅ | `nixosModules.<name>` | - |
 | `nixosConfigurations` (`hosts`, `profiles`) | `<name>/configuration.nix` | - | ✅ | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
-| `apps` | `<name>/package.nix` | `default.nix` | ✅ | `apps.<system>.<name>` | `nix run .#<name>` |
+| `apps` | `<name>.nix` or `<name>/package.nix` | `scope.nix` | ✅ | `apps.<system>.<name>` | `nix run .#<name>` |
 | `devShells` (`shells`) | `<name>.nix` | `default.nix` | ✅ | `devShells.<system>.<name>` | `nix develop .#<name>` |
 | `templates` | `<name>/` | `flake.nix` | ❌ | `templates.<name>` | `nix flake init --template <url>#<name>` |
 | `lib` (`utils`, `tools`) | `<name>.nix` | - | ✅ | `lib.<name>` | `nix eval .#lib.<name>` |
-| `checks` | `<name>.nix` | `default.nix` | ✅ | `checks.<system>.<name>` | `nix flake check .#<name>` |
+| `checks` | `<name>.nix` or `<name>/package.nix` | `scope.nix` | ✅ | `checks.<system>.<name>` | `nix flake check .#<name>` |
+
+### Unified Package Model
+
+The framework unifies the handling of `packages`, `apps`, and `checks` under a single **"Scoped Package Tree"** model.
+
+- **Unified Entry**: Supports both single-file (`<name>.nix`) and directory-based (`<name>/package.nix`) definitions.
+- **Unified Build**: All components are built using `callPackage`, enjoying automatic dependency injection from `pkgs`.
+- **Unified Scoping**: `scope.nix` is supported in all hierarchies (`pkgs`, `apps`, `checks`) to customize dependencies or inject parameters.
+- **Explicit Context**: The `scope.nix` function receives the full system context (`pkgs`, `self`, `inputs`, `system`, `lib`) as arguments, allowing users to explicitly inject them into the package scope if desired. Auto-injection is avoided to keep the default scope clean.
+
+### Specific Behaviors
+
+- **Apps**: Automatically converts the built package into an App structure (`{ type="app"; program="..."; }`) by inferring the main program (via `meta.mainProgram` or package name).
+- **Checks**: Treated as packages that run tests during build. Access to `self` or `inputs` is available via function arguments.
 
 ### Package Scope System (callPackage)
 

@@ -10,14 +10,14 @@ Flake FHS 是一个 Nix Flake 框架，旨在通过标准化的目录结构自�
 
 | 目录 (别名) | 识别模式 | 生成 Output | 对应的 Nix 命令 |
 | :--- | :--- | :--- | :--- |
-| [`pkgs`](#pkgs) (`packages`) | `<name>/package.nix` | `packages.<system>.<name>` | `nix build .#<name>` |
+| [`pkgs`](#pkgs) (`packages`) | `<name>.nix` 或 `<name>/package.nix` | `packages.<system>.<name>` | `nix build .#<name>` |
 | [`modules`](#modules) (`nixosModules`) | `<name>/{options.nix,*.nix}` | `nixosModules.<name>` | - |
 | [`hosts`](#hosts) (`profiles`) | `<name>/configuration.nix` | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
-| [`apps`](#apps) | `<name>/package.nix` | `apps.<system>.<name>` | `nix run .#<name>` |
+| [`apps`](#apps) | `<name>.nix` 或 `<name>/package.nix` | `apps.<system>.<name>` | `nix run .#<name>` |
 | [`shells`](#shells) (`devShells`) | `<name>.nix` | `devShells.<system>.<name>` | `nix develop .#<name>` |
 | `templates` | `<name>/` | `templates.<name>` | `nix flake init ...` |
 | [`lib`](#lib) (`utils`) | `<name>.nix` | `lib.<name>` | `nix eval .#lib.<name>` |
-| [`checks`](#checks) | `<name>.nix` | `checks.<system>.<name>` | `nix flake check .#<name>` |
+| [`checks`](#checks) | `<name>.nix` 或 `<name>/package.nix` | `checks.<system>.<name>` | `nix flake check .#<name>` |
 
 ---
 
@@ -29,18 +29,30 @@ Flake FHS 是一个 Nix Flake 框架，旨在通过标准化的目录结构自�
 
 **目录结构**
 
-遵循类似 `nixpkgs` 的 `by-name` 结构：
+遵循类似 `nixpkgs` 的 `by-name` 结构，同时支持单文件定义：
 
 ```
 pkgs/
-└── default.nix  # (可选) 控制导出
+├── hello.nix            # 简单包 (文件模式)
+├── complex-app/         # 复杂包 (目录模式)
+│   ├── package.nix      # -> 必须包含此文件
+│   └── src/
+└── group/               # 包组
+    ├── scope.nix        # -> 定义局部作用域
+    ├── utils.nix
+    └── core/
+        └── package.nix
 ```
 
 **Scope 与 callPackage**
 
-Flake FHS 使用 Nix 的 `callPackage` 机制来构建软件包。`scope.nix` 文件用于配置 `callPackage` 所使用的 **Scope (上下文包集)**。
+Flake FHS 使用 Nix 的 `callPackage` 机制来构建软件包。所有包定义（无论是 `.nix` 文件还是 `package.nix`）都通过 `callPackage` 构建，因此你可以直接声明所需的依赖。
 
-*   **作用范围**: `scope.nix` 会影响**同级目录**中的 `package.nix` 以及**所有子目录**。这意味着你可以实现从目录级到包级 (Per-Package) 的精细控制。
+**Scope (作用域)**
+
+`scope.nix` 文件用于配置 `callPackage` 所使用的 **Scope (上下文包集)**。
+
+*   **作用范围**: `scope.nix` 会影响**同级目录**中的所有包以及**所有子目录**。
 *   **约定格式**: `{ pkgs, inputs, ... }: { scope = ...; args = ...; }`
 
 **参数说明**
@@ -51,7 +63,29 @@ Flake FHS 使用 Nix 的 `callPackage` 机制来构建软件包。`scope.nix` �
     *   如果未指定，则默认**继承**父级的 scope。
 *   **args**: 注入到 `callPackage` 的额外参数。
     *   这些参数会作为 **第二个参数** 传递给 `callPackage`。
-    *   最终，它们可以作为参数直接传递给 `package.nix` 函数。
+    *   最终，它们可以作为参数直接传递给包定义函数。
+
+**参数注入**
+
+默认情况下，`callPackage` 的作用域仅包含 `pkgs`。如果你的包需要访问全局参数（如 `self`, `inputs`, `lib`），你需要通过 `scope.nix` 显式注入它们。
+
+例如，注入 `self` 和 `inputs`：
+
+`pkgs/scope.nix`:
+```nix
+{ pkgs, self, inputs, lib, ... }:
+{
+  scope = lib.mkScope (pkgs // { inherit self inputs lib; });
+}
+```
+
+然后你就可以在包定义中使用它们：
+```nix
+{ stdenv, inputs, ... }: 
+stdenv.mkDerivation {
+  # ... 使用 inputs.nixpkgs ...
+}
+```
 
 **继承规则**
 
@@ -66,8 +100,7 @@ pkgs/
     ├── scope.nix      # 定义作用域
     ├── pandas/
     │   └── package.nix
-    └── numpy/
-        └── package.nix
+    └── numpy.nix      # 文件模式
 ```
 
 `pkgs/python/scope.nix`:
@@ -82,13 +115,13 @@ pkgs/
 }
 ```
 
-`pkgs/python/pandas/package.nix`:
+`pkgs/python/numpy.nix`:
 ```nix
-# 这里可以直接请求 buildPythonPackage, numpy 等 Python 生态的包
-{ buildPythonPackage, numpy, ... }:
+# 这里可以直接请求 buildPythonPackage, pytest 等 Python 生态的包
+{ buildPythonPackage, pytest, ... }:
 
 buildPythonPackage {
-  pname = "pandas";
+  pname = "numpy";
   # ...
 }
 ```
@@ -118,7 +151,7 @@ stdenv.mkDerivation {
 
 **代码示例**
 
-`pkgs/hello/package.nix`:
+`pkgs/hello.nix`:
 ```nix
 { stdenv, fetchurl }:
 
@@ -128,19 +161,6 @@ stdenv.mkDerivation {
     url = "https://ftp.gnu.org/gnu/hello/hello-2.10.tar.gz";
     sha256 = "0ssi1wiafch70d1viwdv6vjdvc1sr9h3w7v4qhdbbwj3k9j5b3v8";
   };
-}
-```
-
-**导出控制 (WIP)**
-
-默认情况下，所有包含 `package.nix` 的子目录都会被导出。如果你想隐藏某些内部依赖包，可以创建一个 `pkgs/default.nix`：
-
-```nix
-# pkgs/default.nix
-{
-  # 显式导出
-  hello = import ./hello;
-  # hidden-dep = import ./hidden-dep; # 不会被导出到 flake outputs
 }
 ```
 
@@ -272,24 +292,21 @@ nixos-rebuild build --flake .#laptop
 
 **目录结构**
 
-`apps/` 目录采用与 `pkgs/` 相同的目录结构（`package.nix`）。Flake FHS 会加载这些包，并自动推断程序入口点（`mainProgram`）来生成 app。
+`apps/` 目录完全复用 `pkgs/` 的结构与逻辑：支持 `package.nix` 目录模式、`<name>.nix` 文件模式，以及 `scope.nix` 依赖注入。
+
+区别在于：Flake FHS 会自动将构建出的软件包包装为 App 结构。
 
 **自动推断机制**
 
-在 `apps/` 目录下的 `package.nix` 中，框架会尝试自动推断程序的入口点。当然，你也可以通过设置 `meta.mainProgram` 来手动指定。推断优先级如下：
+框架会尝试自动推断程序的入口点。当然，你也可以通过设置 `meta.mainProgram` 来手动指定。推断优先级如下：
 1.  `meta.mainProgram` (显式指定)
 2.  `pname`
 3.  `name` (去除版本号后缀)
 
 **代码示例**
 
-```
-apps/
-└── deploy/
-    └── package.nix
-```
+**1. 目录模式 (`apps/deploy/package.nix`)**
 
-`apps/deploy/package.nix`:
 ```nix
 { writeShellScriptBin }:
 writeShellScriptBin "deploy" ''
@@ -297,9 +314,17 @@ writeShellScriptBin "deploy" ''
 ''
 ```
 
+**2. 文件模式 (`apps/hello.nix`)**
+
+```nix
+{ pkgs }:
+pkgs.hello
+```
+
 运行命令：
 ```bash
 nix run .#deploy
+nix run .#hello
 ```
 
 ---
@@ -337,23 +362,34 @@ pkgs.mkShell {
 
 **目录结构**
 
-```
-checks/
-├── fmt.nix                  # 文件模式 -> checks.fmt
-└── integration/             # 目录模式
-    └── default.nix          # -> checks.integration
-```
+`checks/` 目录完全复用 `pkgs/` 的结构与逻辑：支持 `package.nix` 目录模式、`<name>.nix` 文件模式，以及 `scope.nix` 依赖注入。
+
+**重要变更**
+
+Checks 现在通过 `callPackage` 构建，这意味着你不再直接编写 `{ system, pkgs, ... }` 形式的函数，而是编写标准的包定义函数 `{ pkgs, ... }`。如果你需要 `system` 或其他 inputs，请确保通过 `scope.nix` 注入它们（参见[参数注入](#pkgs)章节）。
 
 **代码示例**
 
-`checks/fmt.nix`:
+假设你已在 `checks/scope.nix` 中注入了 `self` 和 `inputs`。
+
+**1. 文件模式 (`checks/fmt.nix`)**
 
 ```nix
-{ pkgs }:
+{ pkgs, self }: # 需在 scope.nix 中注入 self
 pkgs.runCommand "check-fmt" {
   buildInputs = [ pkgs.nixfmt ];
 } ''
-  nixfmt --check ${./.}
+  nixfmt --check ${self}
+  touch $out
+''
+```
+
+**2. 目录模式 (`checks/integration/package.nix`)**
+
+```nix
+{ pkgs, inputs }: # 需在 scope.nix 中注入 inputs
+pkgs.runCommand "integration-test" {} ''
+  echo "Running tests against ${inputs.nixpkgs.rev}..."
   touch $out
 ''
 ```

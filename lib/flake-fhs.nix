@@ -228,13 +228,33 @@ let
       breadcrumbs,
     }:
     let
-      children = exploreDir [ path ] (it: rec {
-        hasScope = pathExists (it.path + "/scope.nix");
-        hasPackage = pathExists (it.path + "/package.nix");
-        isInteresting = hasScope || hasPackage;
+      # 1. File Packages: *.nix files in current dir (excluding special ones)
+      filePackages = forFilter (lsFiles path) (
+        fname:
+        if
+          hasSuffix ".nix" fname && fname != "scope.nix" && fname != "default.nix" && fname != "package.nix"
+        then
+          {
+            name = lib.removeSuffix ".nix" fname;
+            path = path + "/${fname}";
+          }
+        else
+          null
+      );
 
+      # 2. Directory Packages & Sub-scopes
+      children = exploreDir [ path ] (it: rec {
+        scopePath = it.path + "/scope.nix";
+        packagePath = it.path + "/package.nix";
+        hasScope = pathExists scopePath;
+        hasPackage = pathExists packagePath;
+
+        # We pick this node if it has scope or package.
+        isInteresting = hasScope || hasPackage;
         pick = isInteresting;
-        into = !isInteresting;
+
+        # Stop recursion if we hit a package boundary.
+        into = !hasPackage;
 
         out = mkScopedTreeNode {
           path = it.path;
@@ -246,7 +266,7 @@ let
       inherit path breadcrumbs;
       hasScope = pathExists (path + "/scope.nix");
       hasPackage = pathExists (path + "/package.nix");
-      inherit children;
+      inherit filePackages children;
     };
 
   evalScopedTree =
@@ -267,19 +287,28 @@ let
       extraArgs = scopedData.args or { };
       nextArgs = baseArgs // extraArgs;
 
-      # 2. Evaluate Package
-      package-dot-nix = node.path + "/package.nix";
-      currentPkgs =
+      # 2. Evaluate Packages
+
+      # 2.1 Directory Package (package.nix)
+      dirPkg =
         if node.hasPackage then
           [
             {
               name = concatStringsSep "/" node.breadcrumbs;
               # Pass accumulated args as the second argument to callPackage
-              value = nextScope.callPackage package-dot-nix nextArgs;
+              value = nextScope.callPackage (node.path + "/package.nix") nextArgs;
             }
           ]
         else
           [ ];
+
+      # 2.2 File Packages (*.nix)
+      filePkgs = map (p: {
+        name = concatStringsSep "/" (node.breadcrumbs ++ [ p.name ]);
+        value = nextScope.callPackage p.path nextArgs;
+      }) node.filePackages;
+
+      currentPkgs = dirPkg ++ filePkgs;
 
       # 3. Recurse
       childrenPkgs = concatMap (evalScopedTree context nextScope nextArgs) node.children;
@@ -503,16 +532,19 @@ let
             lib = mergedLib;
           }
           // (userCtx.specialArgs or { });
+
+          scope = mergedLib.mkScope pkgs;
         in
         {
           inherit
             self
             system
             pkgs
-            lib
             specialArgs
             inputs
+            scope
             ;
+          lib = mergedLib;
         }
         // (removeAttrs userCtx [ "specialArgs" ]);
 
@@ -577,6 +609,29 @@ let
           inherit info;
         };
       });
+
+      # collectFromRoots :: [String] -> SystemContext -> [PackageNode]
+      collectFromRoots =
+        subdirsList: sysContext:
+        builtins.concatMap (
+          root:
+          let
+            validSubdirs = forFilter subdirsList (
+              subdir:
+              let
+                p = root + "/${subdir}";
+              in
+              if pathExists p then p else null
+            );
+          in
+          builtins.concatMap (
+            pkgRoot:
+            evalScopedTree sysContext sysContext.scope { } (mkScopedTreeNode {
+              path = pkgRoot;
+              breadcrumbs = [ ];
+            })
+          ) validSubdirs
+        ) roots;
     in
     {
       # Generate all flake outputs
@@ -592,50 +647,24 @@ let
       #  templates/   # top-level subdirs marked by templates.nix
 
       packages = eachSystem (
-        sysContext:
-        listToAttrs (
-          builtins.concatMap (
-            root:
-            let
-              validSubdirs = forFilter layout.packages.subdirs (
-                subdir:
-                let
-                  p = root + "/${subdir}";
-                in
-                if pathExists p then p else null
-              );
-            in
-            builtins.concatMap (
-              pkgRoot:
-              evalScopedTree sysContext sysContext.pkgs { } (mkScopedTreeNode {
-                path = pkgRoot;
-                breadcrumbs = [ ];
-              })
-            ) validSubdirs
-          ) roots
-        )
+        sysContext: listToAttrs (collectFromRoots layout.packages.subdirs sysContext)
       );
 
       apps = eachSystem (
         sysContext:
         let
           inherit (flakeFhsLib.more sysContext.pkgs) inferMainProgram;
+          # 1. Collect all packages from 'apps' directories
+          rawApps = collectFromRoots layout.apps.subdirs sysContext;
         in
         listToAttrs (
-          exploreDir roots (it: rec {
-            package-dot-nix = it.path + "/package.nix";
-            pkg = sysContext.pkgs.callPackage package-dot-nix { };
-            mainProgram = inferMainProgram pkg;
-            into = it.depth == 0 && partOf.apps it.name || it.depth >= 1;
-            pick = it.depth >= 1 && pathExists package-dot-nix;
-            out = {
-              name = concatStringsSep "/" (tail it.breadcrumbs');
-              value = {
-                type = "app";
-                program = "${pkg}/bin/${mainProgram}";
-              };
+          map (app: {
+            name = app.name;
+            value = {
+              type = "app";
+              program = "${app.value}/bin/${inferMainProgram app.value}";
             };
-          })
+          }) rawApps
         )
       );
 
@@ -724,64 +753,7 @@ let
         ) validHosts
       );
 
-      checks = eachSystem (
-        sysContext:
-        let
-          # 1. File mode: collect top-level .nix files
-          fileChecks = concatFor roots (
-            root:
-            let
-              checksPath = root + "/checks";
-            in
-            if pathExists checksPath then
-              for (lsFiles checksPath) (
-                name:
-                let
-                  checkPath = checksPath + "/${name}";
-                in
-                if builtins.match ".*\\.nix$" name != null && name != "default.nix" then
-                  {
-                    name = builtins.substring 0 (builtins.stringLength name - 4) name;
-                    path = checkPath;
-                  }
-                else
-                  null
-              )
-            else
-              [ ]
-          );
-
-          validFileChecks = builtins.filter (x: x != null) fileChecks;
-
-          # 2. Directory mode: recursively find all directories containing default.nix
-          directoryChecks = concatFor roots (
-            root:
-            let
-              checksPath = root + "/checks";
-            in
-            if pathExists checksPath then
-              for (findSubDirsContains checksPath "default.nix") (relativePath: {
-                name = relativePath;
-                path = checksPath + "/${relativePath}";
-              })
-            else
-              [ ]
-          );
-
-          # 3. File mode takes precedence over directory mode on name conflicts
-          allChecks =
-            let
-              fileNames = map (item: item.name) validFileChecks;
-            in
-            validFileChecks ++ builtins.filter (dir: !(builtins.elem dir.name fileNames)) directoryChecks;
-        in
-        builtins.listToAttrs (
-          map (item: {
-            name = item.name;
-            value = import item.path sysContext;
-          }) allChecks
-        )
-      );
+      checks = eachSystem (sysContext: listToAttrs (collectFromRoots layout.checks.subdirs sysContext));
 
       lib = prepareLib {
         inherit roots lib;
