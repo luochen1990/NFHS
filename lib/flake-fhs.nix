@@ -253,18 +253,22 @@ let
           [ ];
 
       # 2.2 File Packages (*.nix)
-      filePkgs = forFilter (lsFiles path) (
-        fname:
-        if
-          hasSuffix ".nix" fname && fname != "scope.nix" && fname != "default.nix" && fname != "package.nix"
-        then
-          {
-            name = concatStringsSep "/" (breadcrumbs ++ [ (lib.removeSuffix ".nix" fname) ]);
-            value = nextScope.callPackage (path + "/${fname}") nextArgs;
-          }
+      filePkgs =
+        if hasPackage then
+          [ ]
         else
-          null
-      );
+          forFilter (lsFiles path) (
+            fname:
+            if
+              hasSuffix ".nix" fname && fname != "scope.nix" && fname != "default.nix" && fname != "package.nix"
+            then
+              {
+                name = concatStringsSep "/" (breadcrumbs ++ [ (lib.removeSuffix ".nix" fname) ]);
+                value = nextScope.callPackage (path + "/${fname}") nextArgs;
+              }
+            else
+              null
+          );
 
       # 3. Recurse
       # Stop recursion if this directory is a package itself (Encapsulation)

@@ -28,6 +28,7 @@ The framework implements an automatic mapping from directory structure to flake 
 The framework unifies the handling of `packages`, `apps`, and `checks` under a single **"Scoped Package Tree"** model.
 
 - **Unified Entry**: Supports both single-file (`<name>.nix`) and directory-based (`<name>/package.nix`) definitions.
+- **Encapsulation**: If a directory contains `package.nix`, it is treated exclusively as a package definition. Other `.nix` files in that directory are ignored by the automatic scanner (treated as internal helper files).
 - **Unified Build**: All components are built using `callPackage`, enjoying automatic dependency injection from `pkgs`.
 - **Unified Scoping**: `scope.nix` is supported in all hierarchies (`pkgs`, `apps`, `checks`) to customize dependencies or inject parameters.
 - **Explicit Context**: The `scope.nix` function receives the full system context (`pkgs`, `self`, `inputs`, `system`, `lib`) as arguments, allowing users to explicitly inject them into the package scope if desired. Auto-injection is avoided to keep the default scope clean.
