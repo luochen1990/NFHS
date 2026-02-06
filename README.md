@@ -12,20 +12,39 @@
 
 Flake FHS 通过引入一套**固定且可预测**的目录规范来解决这些问题。你只需将文件放入约定的目录，框架会自动处理剩余的工作。
 
-## 目录映射概览
+## 目录映射规则表
 
 Flake FHS 将文件系统的目录结构直接映射为 Flake Outputs：
 
-| 目录 | 对应 Flake Output | 说明 |
+| 目录 (及别名) | 对应 Flake Output | 说明 |
 |---|---|---|
-| `pkgs/` | `packages` | 包含 `package.nix` 的子目录会被识别为包 |
-| `modules/` | `nixosModules` | 自动发现并组合 NixOS 模块 |
-| `hosts/` | `nixosConfigurations` | 每个子目录对应一个 NixOS 系统配置 |
-| `apps/` | `apps` | 定义可运行的应用程序 (目录结构同 `pkgs/`) |
-| `shells/` | `devShells` | 开发环境定义 |
-| `lib/` | `lib` | 扩展 `lib` 函数库 |
-| `checks/` | `checks` | CI/CD 检查项 |
-| `templates/` | `templates` | 项目初始化模板 |
+| `nixosConfigurations/` (`hosts`) | `nixosConfigurations` | 扫描子目录；每个含 `configuration.nix` 的目录对应一个主机配置 |
+| `nixosModules/` (`modules`) | `nixosModules` | 递归扫描；含 `options.nix` 的目录自动生成 `enable` 选项 |
+| `packages/` (`pkgs`) | `packages` | 递归扫描；识别 `<name>.nix` 或 `<name>/package.nix` |
+| `apps/` | `apps` | 结构同 `packages`；自动推导可执行程序路径 |
+| `checks/` | `checks` | 结构同 `packages`；定义 CI/CD 检查项 |
+| `devShells/` (`shells`) | `devShells` | 识别 `<name>.nix`；定义开发环境 |
+| `lib/` | `lib` | 递归扫描 `.nix` 文件；构建扩展函数库 |
+| `templates/` | `templates` | 每个一级子目录为一个模板；非递归扫描 |
+
+## 核心特性
+
+*   **基于目录结构的自动发现 (Convention over Configuration)**
+    Flake FHS 将文件系统的目录结构直接映射为 Flake Outputs，实现了高度的自动化：
+    *   **统一的包管理 (Pkgs, Apps, Checks)**: 采用统一的 `package.nix` + `scope.nix` 模型。系统自动发现并通过 `callPackage` 构建包，支持灵活的依赖注入（如自动注入全局 inputs 或特定语言环境），无需手动维护包列表。
+    *   **智能模块加载 (Modules)**: 自动递归发现 `modules/` 下的 NixOS 模块。对于包含 `options.nix` 的目录（Guarded Modules），系统会自动生成 `enable` 选项，实现了模块的“声明即注册，启用即加载”。
+
+*   **统一的构建范式 (Unified Build Paradigm)**
+    打破了不同 Flake Outputs 之间的定义壁垒。无论是软件包 (`pkgs`)、应用程序 (`apps`) 还是测试用例 (`checks`)，均采用统一的 `package.nix` + `callPackage` 机制构建，共享相同的依赖注入机制。这意味着你只需掌握一种定义方式，即可应用于项目的各个部分。
+
+*   **优化的开发体验 (Developer Experience)**
+    框架内置了对 `treefmt` 的支持，确保代码风格统一。同时，系统支持从 `packages` 自动派生 `devShells`，让你能一键进入任何包的调试环境，无需重复定义开发环境。
+
+*   **渐进式采用**
+    设计上支持混合模式。你可以仅让 Flake FHS 接管一部分输出（如只管理 `packages`），而将 `nixosConfigurations` 留给传统方式定义，从而实现平滑迁移现有项目。
+
+*   **Colmena 集成**
+    开箱即用的 [Colmena](https://github.com/zhaofengli/colmena) 支持。只需在全局配置中开启 `colmena.enable = true`，即可利用 Colmena 进行高效的多主机并行部署。
 
 ## 快速开始
 
