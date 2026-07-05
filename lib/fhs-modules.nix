@@ -307,7 +307,10 @@ let
             "__functor"
             "__functionArgs"
           ];
-          mergedConfig = explicitConfig // implicitConfig;
+          mergedConfig = lib.mkMerge [
+            explicitConfig
+            implicitConfig
+          ];
 
           # 4. mkIf 条件 (用于嵌套 guarded 模块)
           # 使用 lib.attrByPath 安全访问属性，在属性不存在时返回 false

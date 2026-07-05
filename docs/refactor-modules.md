@@ -302,7 +302,7 @@ genericWrapModule =
           "imports" "options" "config" "_file" "meta" 
           "disabledModules" "__functor" "__functionArgs"
         ];
-        mergedConfig = explicitConfig // implicitConfig;
+        mergedConfig = lib.mkMerge [ explicitConfig implicitConfig ];
         
         # 4. mkIf condition (for nested guarded modules)
         mkIfCondition =
