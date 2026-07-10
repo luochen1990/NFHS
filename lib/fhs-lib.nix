@@ -24,11 +24,7 @@ in
       roots,
       lib, # 这是 nixpkgs 的 lib
       pkgs ? null,
-      libSubdirs ? [
-        "lib"
-        "tools"
-        "utils"
-      ],
+      libSubdirs ? [ "lib" ],
     }:
     let
       files = concatLists (

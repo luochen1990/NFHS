@@ -16,11 +16,11 @@ The framework implements an automatic mapping from directory structure to flake 
 |---|---|---|:---:|---|---|
 | `packages` (`pkgs`) | `<name>.nix` or `<name>/package.nix` | `scope.nix` | ✅ | `packages.<system>.<name>` | `nix build .#<name>` |
 | `nixosModules` (`modules`) | `<name>/...` | `options.nix`, `default.nix` | ✅ | `nixosModules.<name>` | - |
-| `nixosConfigurations` (`hosts`, `profiles`) | `<name>/configuration.nix` | `default.nix` | ✅ | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
+| `nixosConfigurations` (`hosts`) | `<name>/configuration.nix` | `default.nix` | ✅ | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
 | `apps` | `<name>.nix` or `<name>/package.nix` | `scope.nix` | ✅ | `apps.<system>.<name>` | `nix run .#<name>` |
 | `devShells` (`shells`) | `<name>.nix` | `default.nix` | ✅ | `devShells.<system>.<name>` | `nix develop .#<name>` |
 | `templates` | `<name>/` | `flake.nix` | ❌ | `templates.<name>` | `nix flake init --template <url>#<name>` |
-| `lib` (`utils`, `tools`) | `<name>.nix` | - | ✅ | `lib.<name>` | `nix eval .#lib.<name>` |
+| `lib` | `<name>.nix` | - | ✅ | `lib.<name>` | `nix eval .#lib.<name>` |
 | `checks` | `<name>.nix` or `<name>/package.nix` | `scope.nix` | ✅ | `checks.<system>.<name>` | `nix flake check .#<name>` |
 
 ### Host Metadata (nixosConfigurations)
