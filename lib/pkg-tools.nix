@@ -50,9 +50,8 @@ lib: rec {
   # :: Scope -> Scope
   mkScope =
     scope:
-    let
-      _ = if builtins.isFunction scope then builtins.trace "ERROR: scope is a function!" scope else null;
-    in
+    assert lib.assertMsg (!builtins.isFunction scope)
+      "mkScope: scope must be an attrset, not a function (got ${builtins.typeOf scope})";
     scope
     // {
       callPackage = callPackageWithWarning scope;
