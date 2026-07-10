@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+# 职责: Nix 代码静态检查 (lint), 检测死代码与反模式; 可选自动修复
+# 思路:
+#   deadnix: 检测未使用的 let binding / inherit (死代码)
+#     --no-lambda-arg           忽略未使用的 lambda 位置参数 (x: ...)
+#     --no-lambda-pattern-names 忽略 {a, b, ...} 解构中未使用的字段名 (NixOS 模块签名约定)
+#     --no-underscore           忽略 _ 前缀绑定 (约定为有意保留)
+#   statix:  检测 nix 反模式 (冗余括号 / 可简化写法 / 已弃用惯用法等)
+#            额外降噪规则见项目根目录 statix.toml
+#   默认仅报告, 发现任何问题退出码 1 (便于 CI 卡控); --fix 触发原地自动修复
+#   文件范围:
+#     deadnix 走 git ls-files 精确文件列表 (不尊重 .gitignore, 需手动避开 result/ 等符号链接)
+#     statix  默认扫 "." (尊重 .gitignore, 自动跳过 result/ / .direnv/)
+# 用法:
+#   ./scripts/lint                       # 检查全部 .nix 文件 (只报告)
+#   ./scripts/lint --fix                 # 自动修复 (deadnix --edit 删死代码 + statix fix 修反模式)
+#   ./scripts/lint lib                   # 只检查指定路径
+#   ./scripts/lint --fix lib/file.nix    # 只修复指定路径
+# 依赖: deadnix, statix (由 devShells.default 提供, 在 `nix develop` 中可用)
+
+import os
+import shutil
+import subprocess
+import sys
+
+sys.stdout.reconfigure(line_buffering=True)
+
+# deadnix 默认选项: 忽略 lambda 参数/解构字段名 (模块 { config, lib, ... } 签名约定) 与 _ 前缀
+DEADNIX_OPTS = ["--no-lambda-arg", "--no-lambda-pattern-names", "--no-underscore"]
+
+
+def collect_files(paths):
+    """收集 git 追踪的非空 .nix 文件."""
+    cmd = ["git", "ls-files", "-z", "--"] + (paths or ["*.nix"])
+    out = subprocess.run(cmd, capture_output=True).stdout
+    return [
+        f.decode() for f in out.split(b"\0")
+        if f and f.endswith(b".nix") and os.path.getsize(f) > 0
+    ]
+
+
+def require_tools():
+    missing = [t for t in ("deadnix", "statix") if not shutil.which(t)]
+    if missing:
+        print(f"✗ 缺少工具: {' '.join(missing)}")
+        print("  请在 devShell 中运行: nix develop -c just lint")
+        sys.exit(2)
+
+
+def run_deadnix(files, edit):
+    """返回是否发现死代码. (deadnix 退出码恒为 0, 靠 stdout 是否非空判断)."""
+    cmd = ["deadnix", *DEADNIX_OPTS]
+    if edit:
+        cmd.append("--edit")
+    cmd += files
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.stdout.strip():
+        sys.stdout.write(r.stdout)
+    if r.stderr.strip():
+        sys.stderr.write(r.stderr)
+    return bool(r.stdout.strip())
+
+
+def run_statix(targets, fix):
+    """返回是否全部通过 (statix check 退出码 0 = 无问题; statix fix 原地修复)."""
+    cmd_base = ["statix", "fix" if fix else "check"]
+    all_ok = True
+    for t in targets:
+        r = subprocess.run(cmd_base + [t])  # 透传到终端, 保留颜色与实时输出
+        if r.returncode != 0:
+            all_ok = False
+    return all_ok
+
+
+def main():
+    args = sys.argv[1:]
+    if "-h" in args or "--help" in args:
+        print(__doc__)
+        sys.exit(0)
+
+    fix = "--fix" in args
+    paths = [a for a in args if not a.startswith("-")]
+
+    require_tools()
+
+    files = collect_files(paths)
+    if not files:
+        print("✗ 未找到任何 .nix 文件")
+        sys.exit(1)
+
+    # statix 只接受单个 TARGET; 默认 ".", 用户传路径则逐个扫描
+    statix_targets = paths or ["."]
+    scope = ('修复' if fix else '检查') + f" {len(files)} 个 .nix 文件"
+    if paths:
+        scope += f" (限定: {' '.join(paths)})"
+    print(f"== Nix lint: {scope} ==\n")
+
+    action = "修复" if fix else "检查"
+
+    # deadnix (死代码)
+    print(f"-- deadnix (死代码) {action} --")
+    deadnix_found = run_deadnix(files, edit=fix)
+    if not deadnix_found:
+        print("  ✓ 无死代码")
+
+    # statix (反模式)
+    print(f"\n-- statix (反模式) {action} --")
+    statix_ok = run_statix(statix_targets, fix=fix)
+    if statix_ok:
+        print("  ✓ 无反模式")
+
+    print()
+    if fix:
+        if statix_ok:
+            print("✓ 自动修复完成; 建议再次运行 `just lint` 确认无残留问题")
+        else:
+            print("⚠ statix fix 报告了错误, 请查看上方输出")
+        sys.exit(0 if statix_ok else 1)
+    else:
+        ok = (not deadnix_found) and statix_ok
+        print("✓ 全部通过" if ok else "✗ 发现问题 (见上)")
+        sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()

@@ -51,8 +51,6 @@ let
     test4_ok = testCases.test4.success == false; # Should fail due to assert
   };
 
-  allPassed = builtins.all (x: x) (builtins.attrValues checks);
-
 in
 pkgs.runCommand "check-conflict-detection" { } ''
   echo "=== Test: Conflict detection logic ==="

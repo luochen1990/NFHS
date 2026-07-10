@@ -57,22 +57,20 @@ rec {
 
   # list all sub directories including hidden ones
   # lsDirsAll : Path -> [DirName]
-  lsDirsAll = (
+  lsDirsAll =
     path:
     let
       d = readDir path;
     in
-    filter (k: d.${k} == "directory") (attrNames d)
-  );
+    filter (k: d.${k} == "directory") (attrNames d);
 
   # lsDirs : Path -> [DirName]
-  lsDirs = (
+  lsDirs =
     path:
     let
       d = readDir path;
     in
-    filter (k: d.${k} == "directory" && (isNotHidden k)) (attrNames d)
-  );
+    filter (k: d.${k} == "directory" && (isNotHidden k)) (attrNames d);
 
   # lsDirPaths : Path -> [Path]
   lsDirPaths = path: map (subdir: path + "/${subdir}") (lsDirs path);

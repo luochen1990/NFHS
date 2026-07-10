@@ -34,6 +34,10 @@ let
         type = lib.types.str;
         default = "guarded-default";
       };
+      options.guarded-app.active = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+      };
     }
     EOF
     cat > $out/modules/guarded-app/config.nix << 'EOF'
@@ -51,6 +55,10 @@ let
         type = lib.types.str;
         default = "traditional-default";
       };
+      options.traditional-set.active = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+      };
       config.traditional-set.active = true;
     }
     EOF
@@ -62,6 +70,10 @@ let
       options.simple.feature = lib.mkOption {
         type = lib.types.bool;
         default = true;
+      };
+      options.simple.active = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
       };
       config.simple.active = true;
     }
@@ -162,42 +174,19 @@ let
           ];
         };
       in
-      if evalDisabled.config.guarded-app ? active then
+      if evalDisabled.config.guarded-app.active then
         throw "Guarded module should NOT be active when disabled"
       else
         true;
   };
 
 in
-pkgs.runCommand "check-module-collection" { } ''
-  echo "=== Test 1: Verify module counts ==="
-  echo "PASS: Found 1 guarded, 1 traditional, 1 single = 3 total"
-
-  echo ""
-  echo "=== Test 2: Verify output names ==="
-  echo "PASS: All module names present in outputs"
-
-  echo ""
-  echo "=== Test 3: Verify default module exists ==="
-  echo "PASS: default module exists"
-
-  echo ""
-  echo "=== Test 4: Verify traditional module always active ==="
-  echo "PASS: Traditional module active"
-
-  echo ""
-  echo "=== Test 5: Verify single file module always active ==="
-  echo "PASS: Single file module active"
-
-  echo ""
-  echo "=== Test 6: Verify guarded module active when enabled ==="
-  echo "PASS: Guarded module active when enabled"
-
-  echo ""
-  echo "=== Test 7: Verify guarded module NOT active when disabled ==="
-  echo "PASS: Guarded module correctly disabled"
-
-  echo ""
-  echo "=== All tests passed ==="
-  touch $out
-''
+pkgs.runCommand "check-module-collection"
+  {
+    # Force evaluation of all checks (Nix is lazy — unreferenced let bindings are never evaluated)
+    checkResults = builtins.toJSON checks;
+  }
+  ''
+    echo "=== module-collection checks forced ==="
+    touch $out
+  ''

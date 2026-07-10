@@ -82,7 +82,6 @@ let
     exploreDir
     hasSuffix
     forFilter
-    concatFor
     isEmptyFile
     underDir
     ;

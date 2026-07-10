@@ -119,8 +119,6 @@ let
         "PASS: Config correctly guarded";
   };
 
-  checkResults = builtins.attrValues checks;
-
 in
 pkgs.runCommand "check-guarded-basic" { } ''
   echo "=== Test 1: Check guarded tree modPath ==="

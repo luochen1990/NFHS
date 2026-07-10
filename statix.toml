@@ -1,0 +1,20 @@
+# statix lint 配置: 针对 flake-fhs 场景降噪 (由 scripts/lint 读取)
+#
+# disabled:
+#   manual_inherit_from — 39% 误报率: statix 会匹配注释中的代码模式 (类型签名等),
+#                         且 name = host.name 在 listToAttrs/map 上下文中是 nixpkgs 主流惯例
+#   manual_inherit      — statix 对 let-in body 表达式产生误报 (非 binding)
+#   bool_comparison     — 测试断言中 == true / != true 是刻意写法:
+#                         != true 比 !x 更防御 (能捕获 null), 且显式比较提升可读性
+#   useless_has_attr    — if cfg ? x then cfg.x else (throw ...) 比 cfg.x or (throw ...) 更清晰
+# ignore:
+#   flake.nix           — inputs 的点号写法 (xxx.url=...) 是 flake 社区惯例
+#   templates/          — 模板代码面向用户教学, 保持直白写法不追求 lint 通过
+
+disabled = [
+  "manual_inherit_from",
+  "manual_inherit",
+  "bool_comparison",
+  "useless_has_attr",
+]
+ignore = ["flake.nix", "templates"]

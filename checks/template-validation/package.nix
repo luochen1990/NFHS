@@ -15,7 +15,7 @@ let
   # This matches how the main flake.nix sets up the library
   libWithAllFunctions = prepareLib {
     roots = [ ../../. ];
-    lib = lib;
+    inherit lib;
   };
 
   # Import the core library we are testing with the full library

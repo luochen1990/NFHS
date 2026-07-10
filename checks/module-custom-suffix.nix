@@ -32,6 +32,10 @@ let
         type = lib.types.str;
         default = "guarded-default";
       };
+      options.guarded-app.active = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+      };
     }
     EOF
     cat > $out/modules/guarded-app/config.mod.nix << 'EOF'
@@ -55,6 +59,10 @@ let
       options.simple.feature = lib.mkOption {
         type = lib.types.bool;
         default = true;
+      };
+      options.simple.active = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
       };
       config.simple.active = true;
     }
@@ -140,31 +148,12 @@ let
   };
 
 in
-pkgs.runCommand "check-module-custom-suffix" { } ''
-  echo "=== Test 1: Verify module counts (helper.nix ignored) ==="
-  echo "PASS: Found 1 guarded, 1 single = 2 total (helper.nix correctly ignored)"
-
-  echo ""
-  echo "=== Test 2: Verify output names ==="
-  echo "PASS: All module names present in outputs"
-
-  echo ""
-  echo "=== Test 3: Verify default module exists ==="
-  echo "PASS: default module exists"
-
-  echo ""
-  echo "=== Test 4: Verify single file module always active ==="
-  echo "PASS: Single file module active"
-
-  echo ""
-  echo "=== Test 5: Verify guarded module active when enabled ==="
-  echo "PASS: Guarded module active when enabled"
-
-  echo ""
-  echo "=== Test 6: Verify helper.nix was NOT loaded ==="
-  echo "PASS: helper.nix correctly ignored (wrong suffix)"
-
-  echo ""
-  echo "=== All tests passed ==="
-  touch $out
-''
+pkgs.runCommand "check-module-custom-suffix"
+  {
+    # Force evaluation of all checks (Nix is lazy — unreferenced let bindings are never evaluated)
+    checkResults = builtins.toJSON checks;
+  }
+  ''
+    echo "=== module-custom-suffix checks forced ==="
+    touch $out
+  ''

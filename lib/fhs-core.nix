@@ -61,13 +61,12 @@ let
           hostNixpkgsOverlays =
             nixpkgsOverlays ++ ((systemInfo.nixpkgs or { }).overlays or systemInfo.nixpkgsOverlays or [ ]);
 
-          pkgs = (
+          pkgs =
             import nixpkgs {
               inherit system;
               config = hostNixpkgsConfig;
               overlays = hostNixpkgsOverlays;
-            }
-          );
+            };
           preparedLib = flakeFhsLib.prepareLib {
             inherit roots pkgs;
             libSubdirs = layout.lib.subdirs;
@@ -135,8 +134,8 @@ let
 
       # Collect all modules first to check if there are any
       modulesOutput = flakeFhsLib.mkModulesOutput {
-        moduleDirs = moduleDirs;
-        suffix = layout.nixosModules.suffix;
+        inherit moduleDirs;
+        inherit (layout.nixosModules) suffix;
       };
 
       # Shared modules for both NixOS configurations and Colmena
