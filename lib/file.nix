@@ -77,9 +77,6 @@ rec {
   # lsDirPaths : Path -> [Path]
   lsDirPaths = path: map (subdir: path + "/${subdir}") (lsDirs path);
 
-  # subDirsAll : Path -> [Path]
-  # subDirs : Path -> [Path]
-
   # lsFilesAll : Path -> [FileName]
   lsFilesAll =
     path:
@@ -137,14 +134,11 @@ rec {
 
   # findFiles : (Path -> Bool) -> Path -> [Path]
   findFiles =
-    let
-      forFilter = xs: f: filter (x: x != null) (map f xs);
-    in
     test: path:
     let
       d = readDir path;
     in
-    forFilter (attrNames d) (
+    filter (x: x != null) (map (
       k:
       if d.${k} == "regular" then
         (
@@ -156,7 +150,7 @@ rec {
         )
       else
         null
-    );
+    ) (attrNames d));
 
   # findFilesRec : (Path -> Bool) -> Path -> [FilePath]
   findFilesRec =
@@ -222,16 +216,13 @@ rec {
       d = readDir root;
       names = attrNames d;
 
-      # forFilter 的本地实现
-      filterMap = f: xs: filter (x: x != null) (map f xs);
-
       # 收集当前目录下的文件
-      currentFiles = filterMap (
+      currentFiles = filter (x: x != null) (map (
         name: if d.${name} == "regular" && hasSuffix suffix name then root + "/${name}" else null
-      ) names;
+      ) names);
 
       # 处理子目录
-      subDirImports = filterMap (
+      subDirImports = filter (x: x != null) (map (
         name:
         if d.${name} == "directory" && !isHidden name then
           let
@@ -247,7 +238,7 @@ rec {
             importUnguardedFiles suffix subPath
         else
           null
-      ) names;
+      ) names);
     in
     currentFiles ++ concatLists subDirImports;
 
