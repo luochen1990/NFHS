@@ -167,7 +167,7 @@ let
     # pkg-tools.nix — 包工具
     # ──────────────────────────────────────────────
     // {
-      # 属性: 优先级链 — meta.mainProgram > pname > name 正则 > name fallback
+      # 属性: 优先级链 — meta.mainProgram > pname > parseDrvName(name)
       # 每级一个测试, 确保正确短路到正确的分支
       testInferMainProgram_fromMeta = {
         expr = pkgTools.inferMainProgram {
@@ -184,16 +184,16 @@ let
         };
         expected = "mypkg";
       };
-      # NOTE: builtins.match 要求全串匹配, 正则 ^([^-_]+)[-_] 只匹配
-      # "word-" / "word_" 这类恰好以分隔符结尾的名字; 真实包名如
-      # "hello-2.10" 不匹配, 会走 fallback 返回 name 原值.
-      testInferMainProgram_fromNameRegex = {
-        expr = pkgTools.inferMainProgram { name = "hello-"; };
+      # 属性: parseDrvName 在 "第一个后面不跟字母的 -" 处分割版本号
+      # hello-2.10 -> hello
+      testInferMainProgram_fromName_simple = {
+        expr = pkgTools.inferMainProgram { name = "hello-2.10"; };
         expected = "hello";
       };
-      testInferMainProgram_fromNameFallback = {
-        expr = pkgTools.inferMainProgram { name = "hello-2.10"; };
-        expected = "hello-2.10";
+      # apache-httpd-2.0.48 -> apache-httpd (-httpd 后面跟字母, 不分割)
+      testInferMainProgram_fromName_multiSegment = {
+        expr = pkgTools.inferMainProgram { name = "apache-httpd-2.0.48"; };
+        expected = "apache-httpd";
       };
 
       # mkScope: 注入 callPackage
