@@ -1,5 +1,5 @@
 {
-  description = "Minimal template - only flake.nix";
+  description = "Recommended: minimal template for pure Nix projects";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

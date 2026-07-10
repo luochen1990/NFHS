@@ -24,7 +24,7 @@ Just drop your files into the designated directories, and the corresponding Flak
 ## Quick Start
 
 ```bash
-# Initialize a new project with the short-name template
+# Initialize a new project with the minimal template
 nix flake init --template github:luochen1990/flake-fhs
 ```
 

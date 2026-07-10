@@ -1,5 +1,7 @@
 # Module System Refactor Design
 
+> **Status: Implemented.** This document records the design rationale for the module system refactor. The implementation lives in `lib/fhs-modules.nix`. See `docs/manual-modules.md` for the user-facing guide.
+
 ## Overview
 
 This document describes the redesigned module system for flake-fhs, combining the best ideas from both `master` and `feature-refactor-modules` branches.
@@ -592,27 +594,19 @@ mkModulesOutput = modulesDir:
 
 ## 4. Implementation Checklist
 
-### 4.1 Core Files to Modify
+All items completed. Core files modified:
+- `lib/fhs-modules.nix` — Main implementation
+- `lib/fhs-config.nix` — Configuration options
+- `lib/file.nix` — Utility functions
 
-- [ ] `lib/fhs-modules.nix` - Main implementation
-- [ ] `lib/fhs-config.nix` - Remove optionsMode option
-- [ ] `lib/file.nix` - Ensure all required utilities exist
-
-### 4.2 Tests to Create
-
-- [ ] `checks/guarded-basic.nix` - Basic guarded module
-- [ ] `checks/guarded-nested.nix` - Nested guarded modules (parent enable check)
-- [ ] `checks/traditional-basic.nix` - Traditional directory module
-- [ ] `checks/single-file.nix` - Single file module
-- [ ] `checks/conflict-detection.nix` - options.nix + default.nix conflict
-- [ ] `checks/module-collection.nix` - All three types together
-
-### 4.3 Documentation to Update
-
-- [ ] `AGENTS.md` - Module system architecture section
-- [ ] `docs/manual.md` - User-facing documentation
-- [ ] `docs/manual-modules.md` - Detailed module guide
-- [ ] Migration guide for breaking changes
+Tests created:
+- `checks/guarded-basic.nix`, `checks/guarded-nested.nix`, `checks/guarded-merge.nix`, `checks/guarded-tree-structure.nix`
+- `checks/traditional-basic.nix`
+- `checks/single-file.nix`
+- `checks/conflict-detection.nix`
+- `checks/module-collection.nix`, `checks/module-custom-suffix.nix`
+- `checks/no-modules-output.nix`
+- `checks/strict-options.nix`
 
 ---
 
@@ -703,27 +697,3 @@ modules/
     └── default.nix
 ```
 ```
-
----
-
-## 6. Advantages
-
-✅ **Clear Conceptual Model**: Three mutually exclusive types  
-✅ **User-Friendly**: Traditional modules require zero learning  
-✅ **SSOT Design**: mkGuardedTree is single source of truth  
-✅ **Simplified**: No optionsMode, no config parameter, no partial loading  
-✅ **Nested Support**: Child guarded modules check all parent enables  
-✅ **Code Reuse**: genericWrapModule provides unified wrapper  
-✅ **Maintainable**: Clear responsibilities, type-driven design  
-✅ **Clear Boundaries**: Traditional modules don't nest, preventing confusion  
-
----
-
-## 7. Timeline Estimate
-
-- **Phase 1** (2-3 days): Implement core logic (mkGuardedTree, wrappers, collectModules)
-- **Phase 2** (1-2 days): Write comprehensive test suite
-- **Phase 3** (1 day): Update documentation
-- **Phase 4** (1-2 days): Real-world testing and refinement
-
-**Total**: 5-8 days

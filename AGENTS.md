@@ -85,10 +85,10 @@ The framework uses `callPackage` to build packages. You can customize the `callP
   - `lib/dict.nix`, `lib/list.nix`, `lib/file.nix`: Fundamental utilities
 
  - **templates/**: Project templates for different use cases
-   - `std`: Standard template with complete nixos-config and flake outputs 1:1 naming
-   - `short`: Short-named template with complete nixos-config
-   - `zero`: Minimal template with only flake.nix (directories left for user to create)
-   - `project`: Project-embedded template with `./nix` directory (for non-Nix projects)
+   - `default` *(recommended)*: Minimal template — only flake.nix, no pre-created directories
+   - `embed` *(recommended)*: Embedded template with `./nix` directory (for non-Nix projects)
+   - `short` *(reference)*: Template with short directory names (`modules`, `hosts`, `pkgs`, `apps`, `shells`)
+   - `long` *(reference)*: Template with long directory names (`nixosModules`, `nixosConfigurations`) + colmena
 
 ## Module System Architecture
 
@@ -175,10 +175,13 @@ modules/
             └── config.nix
 ```
 
-### Strict Mode Only
-Options must strictly match the directory structure. The `optionsMode` configuration has been removed.
-- `modules/foo/options.nix` must define options under `options.foo.*`
-- `modules/foo/bar/options.nix` must define options under `options.foo.bar.*`
+### Strict Options Validation
+
+By default, option namespace is not enforced. Enable `layout.nixosModules.strictOptions` to validate that each option's namespace matches its directory path:
+- `modules/foo/options.nix` should define options under `options.foo.*`
+- `modules/foo/bar/options.nix` should define options under `options.foo.bar.*`
+
+When enabled, violations are reported via `config.assertions` at system evaluation time.
 
 ## Code Quality Standards
 
@@ -330,21 +333,17 @@ The `mkFlake` function has been redesigned to use Nix's module system (`lib.eval
 - Entry point in `lib/flake-fhs.nix`
 - Shared utilities in `lib/` directory
 - Templates in `templates/` with embedded documentation
-- Comprehensive manual in `docs/manual.md`
+- Module system guide in `docs/manual-modules.md`
+- User-facing documentation site: [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs)
 
 ### When Modifying Code
 1. **Utility Functions**: Reuse existing utilities from `lib/` directory
 2. **Module System**: Maintain guarded/unguarded module loading behavior
 3. **Template Updates**: Ensure templates work with current `mkFlake` implementation
 4. **Testing**: Run template validation after changes that affect flake outputs
-5. **Documentation**: Update `docs/manual.md` and related split documents (`manual-*.md`) when features change. Ensure the "Scoped Package Tree" concept is consistent across `pkgs`, `apps`, `checks` documentation.
+5. **Documentation**: Update `docs/manual-modules.md` for module system changes. Update user-facing docs in the [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs) repo.
 
 ## Documentation Structure
 
-The manual is modularized (`docs/manual-*.md`) with `docs/manual.md` as the entry point.
-
-- **Core Reference**: `docs/manual-pkgs.md` defines the "Scoped Package Tree" model used by `pkgs`, `apps`, `shells`, and `checks`.
-- **Maintenance**:
-  - Update `manual.md` for high-level directory mapping changes.
-  - Update `manual-pkgs.md` for shared build/scope mechanism changes.
-  - Update specific `manual-*.md` files for feature-specific changes.
+- **In-repo**: `docs/manual-modules.md` — module system developer guide
+- **User-facing**: [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs) — Starlight site with bilingual (en/zh-cn) docs

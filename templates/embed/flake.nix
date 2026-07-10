@@ -1,5 +1,5 @@
 {
-  description = "Project-embedded template with ./nix directory";
+  description = "Recommended: embedded template for non-Nix projects with ./nix directory";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";

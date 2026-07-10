@@ -271,9 +271,20 @@ modules/
     └── default.nix
 ```
 
-## Strict Mode
+## Strict Options Validation
 
-Options must strictly match the directory structure:
+By default, option namespace is not enforced. You can enable strict validation:
+
+```nix
+{
+  outputs = inputs@{ flake-fhs, ... }:
+    flake-fhs.lib.mkFlake { inherit inputs; } {
+      layout.nixosModules.strictOptions = true;
+    };
+}
+```
+
+When enabled, each option's namespace must match its directory path:
 
 ```nix
 # modules/foo/options.nix
@@ -292,6 +303,8 @@ Options must strictly match the directory structure:
   };
 }
 ```
+
+Violations are reported via `config.assertions` at system evaluation time, using post-evaluation declaration tracking from the NixOS module system.
 
 ## Output Structure
 
@@ -351,9 +364,7 @@ imports = [ flake.nixosModules.myapp ];  # Merged output
 ```
 
 ### From optionsMode Configuration
-The `optionsMode` configuration has been removed. Now only strict mode is supported:
-- Options must match directory structure
-- No automatic nesting
+The old `optionsMode` configuration (auto/strict/free) has been replaced by `layout.nixosModules.strictOptions` (default: `false`). Enable it to validate option namespace alignment with directory structure.
 
 ### From Nested Traditional Modules
 **Before** (sub-modules were recognized):

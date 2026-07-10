@@ -1,5 +1,5 @@
 {
-  description = "Long-naming template with full nixos-config";
+  description = "Reference: template with long directory names and colmena";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
