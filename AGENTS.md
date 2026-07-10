@@ -90,6 +90,8 @@ The framework uses `callPackage` to build packages. You can customize the `callP
    - `short` *(reference)*: Template with short directory names (`modules`, `hosts`, `pkgs`, `apps`, `shells`)
    - `long` *(reference)*: Template with long directory names (`nixosModules`, `nixosConfigurations`) + colmena
 
+> **Documentation**: All user-facing documentation lives in the [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs) repo as the single source of truth (SSOT). This repo contains only code, tests, and this developer guide.
+
 ## Module System Architecture
 
 The framework implements a module system with **three mutually exclusive module types**:
@@ -329,21 +331,20 @@ The `mkFlake` function has been redesigned to use Nix's module system (`lib.eval
 - **Type Safety**: Leverages Nix's type system extensively
 
 ### File Organization
-- Core logic split across `lib/fhs-*.nix` files (`core`, `modules`, `pkgs`, `config`, `lib`)
-- Entry point in `lib/flake-fhs.nix`
-- Shared utilities in `lib/` directory
-- Templates in `templates/` with embedded documentation
-- Module system guide in `docs/manual-modules.md`
-- User-facing documentation site: [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs)
+- **Core logic**: split across `lib/fhs-*.nix` files (`core`, `modules`, `pkgs`, `config`, `lib`)
+- **Entry point**: `lib/flake-fhs.nix`
+- **Shared utilities**: `lib/` directory
+- **Templates**: `templates/` with embedded documentation
+- **Documentation**: [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs) — Starlight site with bilingual (en/zh-cn) docs (SSOT)
 
 ### When Modifying Code
 1. **Utility Functions**: Reuse existing utilities from `lib/` directory
 2. **Module System**: Maintain guarded/unguarded module loading behavior
 3. **Template Updates**: Ensure templates work with current `mkFlake` implementation
 4. **Testing**: Run template validation after changes that affect flake outputs
-5. **Documentation**: Update `docs/manual-modules.md` for module system changes. Update user-facing docs in the [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs) repo.
+5. **Documentation**: Update user-facing docs in the [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs) repo.
 
 ## Documentation Structure
 
-- **In-repo**: `docs/manual-modules.md` — module system developer guide
-- **User-facing**: [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs) — Starlight site with bilingual (en/zh-cn) docs
+- **SSOT**: [flake-fhs-docs](https://github.com/luochen1990/flake-fhs-docs) — Starlight site with bilingual (en/zh-cn) docs
+- **In-repo**: `AGENTS.md` (this file) — developer guide for code contributors only
