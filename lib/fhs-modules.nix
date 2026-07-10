@@ -498,16 +498,6 @@ let
       # 注意: 只包含实际的 guarded 模块路径 (排除根节点，因为根节点 modPath = [])
       guardedPaths = map (t: t.path) (lib.filter (t: t.modPath != [ ]) allGuardedNodes);
 
-      # 根据路径在 guarded 树中查找对应的树节点
-      findTreeByPath =
-        tree: targetPath:
-        if tree.path == targetPath then
-          tree
-        else
-          lib.findFirst (t: t != null) null (
-            map (child: findTreeByPath child targetPath) tree.guardedChildren
-          );
-
       scanOthers =
         path: breadcrumbs:
         let
@@ -581,22 +571,24 @@ let
     in
     guardedModuleInfos ++ otherModuleInfos;
 
-  # wrapModule :: Path -> ModuleInfo -> Module
+  # findTreeByPath :: GuardedTree -> Path -> GuardedTree?
+  # 根据路径在 guarded 树中递归查找对应的树节点
+  findTreeByPath =
+    tree: targetPath:
+    if tree.path == targetPath then
+      tree
+    else
+      lib.findFirst (t: t != null) null (
+        map (child: findTreeByPath child targetPath) tree.guardedChildren
+      );
+
+  # wrapModule :: GuardedTree -> ModuleInfo -> Module
   # 根据模块类型包装模块
   wrapModule =
     guardedTree: moduleInfo:
     if moduleInfo.moduleType == "guarded" then
-      # 需要重建 GuardedTree 用于 guarded 模块
       let
-        tree = findTreeByPathDeep guardedTree moduleInfo.path;
-        findTreeByPathDeep =
-          tree: targetPath:
-          if tree.path == targetPath then
-            tree
-          else
-            lib.findFirst (t: t != null) null (
-              map (child: findTreeByPathDeep child targetPath) tree.guardedChildren
-            );
+        tree = findTreeByPath guardedTree moduleInfo.path;
       in
       if tree != null then
         wrapGuardedModule tree
