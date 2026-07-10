@@ -15,14 +15,6 @@
 }:
 
 let
-  # Prepare library utilities
-  utils' = lib // (import ../lib/list.nix) // (import ../lib/dict.nix) // (import ../lib/file.nix);
-  inherit (import ../lib/fhs-lib.nix utils') prepareLib;
-
-  libWithUtils = utils' // {
-    inherit prepareLib;
-  };
-
   # Test the conflict detection logic directly
   # The logic in fhs-modules.nix is:
   #   conflictCheck = assert !(hasOptions && hasDefault); true;

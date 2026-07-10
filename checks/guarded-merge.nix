@@ -18,21 +18,11 @@
   pkgs,
   lib,
   self,
+  fhs-modules,
   ...
 }:
 
 let
-  # Prepare library utilities
-  utils' = lib // (import ../lib/list.nix) // (import ../lib/dict.nix) // (import ../lib/file.nix);
-  inherit (import ../lib/fhs-lib.nix utils') prepareLib;
-
-  libWithUtils = utils' // {
-    inherit prepareLib;
-  };
-
-  # Import module functions
-  fhs-modules = import ../lib/fhs-modules.nix libWithUtils;
-
   # 构建测试用 guarded module: 同时使用 mkMerge 和顶层 implicit 写法
   testSource = pkgs.runCommand "test-source-merge" { } ''
     mkdir -p $out/modules/mergeapp

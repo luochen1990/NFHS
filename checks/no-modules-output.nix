@@ -10,21 +10,11 @@
   pkgs,
   lib,
   self,
+  flake-fhs,
   ...
 }:
 
 let
-  # Prepare library utilities
-  utils' = lib // (import ../lib/list.nix) // (import ../lib/dict.nix) // (import ../lib/file.nix);
-  inherit (import ../lib/fhs-lib.nix utils') prepareLib;
-
-  libWithUtils = utils' // {
-    inherit prepareLib;
-  };
-
-  # Import the core library
-  flake-fhs = import ../lib/flake-fhs.nix libWithUtils;
-
   # Create mock source tree WITHOUT any modules
   mockRoot = pkgs.runCommand "mock-no-modules" { } ''
     # Create empty directory structure

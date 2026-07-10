@@ -2,21 +2,11 @@
   pkgs,
   lib,
   self,
+  flake-fhs,
   ...
 }:
 
 let
-  # Replicate library setup
-  utils' = lib // (import ../lib/list.nix) // (import ../lib/dict.nix) // (import ../lib/file.nix);
-  inherit (import ../lib/fhs-lib.nix utils') prepareLib;
-
-  libWithUtils = utils' // {
-    inherit prepareLib;
-  };
-
-  # Import the core library
-  flake-fhs = import ../lib/flake-fhs.nix libWithUtils;
-
   # Create a temporary source tree with scope.nix and package.nix
   scopedSource = pkgs.runCommand "scoped-source" { } ''
     mkdir -p $out/pkgs/scoped

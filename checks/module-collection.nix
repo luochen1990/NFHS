@@ -9,21 +9,11 @@
   pkgs,
   lib,
   self,
+  fhs-modules,
   ...
 }:
 
 let
-  # Prepare library utilities
-  utils' = lib // (import ../lib/list.nix) // (import ../lib/dict.nix) // (import ../lib/file.nix);
-  inherit (import ../lib/fhs-lib.nix utils') prepareLib;
-
-  libWithUtils = utils' // {
-    inherit prepareLib;
-  };
-
-  # Import module functions
-  fhs-modules = import ../lib/fhs-modules.nix libWithUtils;
-
   # Create test directory with all three module types:
   # modules/
   # ├── guarded-app/           <- Guarded module
