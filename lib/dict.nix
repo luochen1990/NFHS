@@ -13,17 +13,6 @@ let
 in
 rec {
 
-  # dict : [k] -> (k -> v) -> Dict k v
-  #  or lib.genAttrs
-  dict =
-    ks: f:
-    listToAttrs (
-      map (k: {
-        name = k;
-        value = f k;
-      }) ks
-    );
-
   # dict' : [k] -> (k -> k') -> (k -> v) -> Dict k' v
   dict' =
     ks: fk: fv:

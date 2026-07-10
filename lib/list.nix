@@ -25,9 +25,6 @@ rec {
   # concatFor : [a] -> (a -> [b]) -> [b]
   concatFor = xs: f: concatLists (map f xs);
 
-  # concatMap : (a -> [b]) -> [a] -> [b]
-  concatMap = f: xs: concatLists (map f xs);
-
   # powerset : [a] -> [[a]]
   powerset =
     xs:

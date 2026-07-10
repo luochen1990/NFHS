@@ -15,7 +15,7 @@ let
     ;
 
   inherit (flakeFhsLib)
-    dict
+    genAttrs
     forFilter
     exploreDir
     ;
@@ -111,7 +111,7 @@ let
       # eachSystem : (SystemContext -> a) -> Dict System a
       eachSystem =
         outputBuilder:
-        dict supportedSystems (
+        genAttrs supportedSystems (
           system:
           let
             evalContext = mkEvalContext { inherit system; };
