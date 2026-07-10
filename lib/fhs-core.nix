@@ -135,7 +135,7 @@ let
       # Collect all modules first to check if there are any
       modulesOutput = flakeFhsLib.mkModulesOutput {
         inherit moduleDirs;
-        inherit (layout.nixosModules) suffix;
+        inherit (layout.nixosModules) suffix strictOptions;
       };
 
       # Shared modules for both NixOS configurations and Colmena

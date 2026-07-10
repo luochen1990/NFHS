@@ -66,9 +66,7 @@ lib:
 let
   inherit (builtins)
     head
-    tail
     elem
-    hasAttr
     concatLists
     concatStringsSep
     pathExists
@@ -220,19 +218,16 @@ let
 
   # genericWrapModule :: {
   #   injectEnable :: Bool,
-  #   checkStrictOptions :: Bool,
   #   enableCheckPath :: [[String]]?
   # } -> ModuleInfo -> (Path | Module) -> Module
   #
   # 统一的模块包装引擎
   # - injectEnable: 是否注入 enable 选项
-  # - checkStrictOptions: 是否检查选项严格匹配路径
   # - enableCheckPath: 用于嵌套 guarded 模块的 enable 检查路径
   #
   genericWrapModule =
     {
       injectEnable,
-      checkStrictOptions,
       enableCheckPath ? null,
     }:
     moduleInfo: module:
@@ -254,20 +249,6 @@ let
         else
           module;
 
-      # 严格模式验证
-      checkStrict =
-        opts: path:
-        if opts == { } || path == [ ] then
-          true
-        else
-          let
-            h = head path;
-          in
-          if hasAttr h opts && removeAttrs opts [ h ] == { } then
-            checkStrict opts.${h} (tail path)
-          else
-            false;
-
       # 转换模块内容
       transform =
         content:
@@ -275,14 +256,7 @@ let
         let
           opts = content.options or { };
 
-          # 1. 严格验证
-          _ =
-            if checkStrictOptions && !checkStrict opts modPath then
-              throw "Strict mode violation: options in ${toString file} must follow ${concatStringsSep "." modPath}"
-            else
-              null;
-
-          # 2. Enable 选项注入
+          # 1. Enable 选项注入
           enablePath = modPath ++ [ "enable" ];
           finalOpts =
             if injectEnable && !lib.hasAttrByPath enablePath opts then
@@ -294,7 +268,7 @@ let
             else
               opts;
 
-          # 3. Config 合并
+          # 2. Config 合并
           explicitConfig = content.config or { };
           implicitConfig = removeAttrs content [
             "imports"
@@ -311,7 +285,7 @@ let
             implicitConfig
           ];
 
-          # 4. mkIf 条件 (用于嵌套 guarded 模块)
+          # 3. mkIf 条件 (用于嵌套 guarded 模块)
           # 使用 lib.attrByPath 安全访问属性，在属性不存在时返回 false
           # 这样可以避免在模块尚未完全加载时抛出错误
           mkIfCondition =
@@ -328,7 +302,7 @@ let
             else
               true; # 无 enable 检查
 
-          # 5. 递归包装本地 imports
+          # 4. 递归包装本地 imports
           originalImports = content.imports or [ ];
           wrappedImports = map (
             i:
@@ -377,7 +351,6 @@ let
     injectEnable: moduleInfo: module:
     genericWrapModule {
       inherit injectEnable;
-      checkStrictOptions = false;
     } moduleInfo module;
 
   # ================================================================
@@ -401,7 +374,6 @@ let
     in
     genericWrapModule {
       injectEnable = true;
-      checkStrictOptions = false; # 暂时禁用 strict mode 检查
     } moduleInfo (tree.path + "/options.nix");
 
   # wrapGuardedConfig :: GuardedTree -> Module
@@ -428,7 +400,6 @@ let
         filePath:
         genericWrapModule {
           injectEnable = false;
-          checkStrictOptions = false;
           inherit enableCheckPath;
         } moduleInfo filePath;
     in
@@ -453,7 +424,6 @@ let
     moduleInfo:
     genericWrapModule {
       injectEnable = false;
-      checkStrictOptions = false;
     } moduleInfo (moduleInfo.path + "/default.nix");
 
   # wrapSingleModule :: ModuleInfo -> Module
@@ -462,7 +432,6 @@ let
     moduleInfo:
     genericWrapModule {
       injectEnable = false;
-      checkStrictOptions = false;
     } moduleInfo moduleInfo.path;
 
   # ================================================================
@@ -600,11 +569,128 @@ let
       wrapSingleModule moduleInfo;
 
   # ================================================================
-  # 5. Output Generation
+  # 5. Strict Options Validation (post-evaluation)
   # ================================================================
 
-  # mkModulesOutputSingle :: Path -> String -> { modules :: [{ name :: String, value :: Module }], default :: Module }
-  # 为单个目录生成模块输出
+  # isOptionLeaf :: Any -> Bool
+  # Check if a value is an evaluated option (has _type = "option")
+  isOptionLeaf = val: builtins.isAttrs val && val._type or null == "option";
+
+  # collectOptionLeaves :: OptionsTree -> [{ loc :: [String], declarations :: [Path] }]
+  # Walk the evaluated options tree collecting all leaf nodes with their
+  # declaration metadata. Only option metadata is forced — option values
+  # remain lazy, so cost is negligible.
+  collectOptionLeaves = options:
+    let
+      walk = prefix: opts:
+        if !builtins.isAttrs opts then [ ]
+        else
+          concatLists (
+            lib.mapAttrsToList (name: val:
+              # Skip _module internal namespace (module system bookkeeping)
+              if prefix == [ ] && name == "_module" then [ ]
+              else
+                let loc = prefix ++ [ name ];
+                in
+                if isOptionLeaf val then
+                  [ { inherit loc; inherit (val) declarations; } ]
+                else if builtins.isAttrs val then
+                  walk loc val
+                else
+                  [ ]
+            ) opts
+          );
+    in
+    walk [ ] options;
+
+  # fileToModPath :: [{ path :: Path, modPath :: [String] }] -> Path -> [String]?
+  # Find the expected modPath for a declaration file by matching against
+  # module directories (most specific match wins).
+  fileToModPath =
+    infos: file:
+    let
+      fileStr = toString file;
+      sorted = builtins.sort (a: b:
+        builtins.stringLength (toString a.path) > builtins.stringLength (toString b.path)
+      ) infos;
+      match = lib.findFirst (info:
+        let infoStr = toString info.path;
+        in lib.hasPrefix (infoStr + "/") fileStr
+      ) null sorted;
+    in
+    if match == null then null else match.modPath;
+
+  # validateOptionNamespaces ::
+  #   [{ path :: Path, modPath :: [String] }] -> OptionsTree
+  #   -> [{ loc :: [String], declarations :: [Path], expectedModPath :: [String] }]
+  #
+  # Post-evaluation validation: each option leaf's loc must start with
+  # the modPath of the module that declared it. This enforces the
+  # flake-fhs convention that directory structure maps 1:1 to option
+  # namespaces. To define options under a different namespace, create
+  # a module at the matching directory path.
+  validateOptionNamespaces = infos: options:
+    let
+      leaves = collectOptionLeaves options;
+      locStartsWith = prefix: loc:
+        builtins.length prefix <= builtins.length loc
+        && lib.take (builtins.length prefix) loc == prefix;
+    in
+    lib.filter (leaf:
+      let
+        expected = lib.filter (x: x != null) (
+          map (fileToModPath infos) leaf.declarations
+        );
+      in
+      # Flag if declaration files are under known module dirs
+      # AND loc does not start with ANY expected modPath
+      expected != [ ]
+      && !(lib.any (modPath: locStartsWith modPath leaf.loc) expected)
+    ) (
+      map (leaf: leaf // {
+        expectedModPath =
+          let
+            exp = lib.filter (x: x != null) (
+              map (fileToModPath infos) leaf.declarations
+            );
+          in
+          if exp != [ ] then head exp else [ ];
+      }) leaves
+    );
+
+  # mkStrictValidationModule :: [{ path :: Path, modPath :: [String] }] -> Module
+  # Inject a validation module that checks option namespaces after evaluation.
+  # Violations are reported via config.assertions (checked by NixOS during build).
+  mkStrictValidationModule = infos:
+    { options, lib, ... }:
+    let
+      violations = validateOptionNamespaces infos options;
+      formatViolation = v:
+        let
+          locStr = concatStringsSep "." v.loc;
+          expectedStr = concatStringsSep "." v.expectedModPath;
+          fileStr = toString (head v.declarations);
+        in
+        "strictOptions: option ${locStr} declared in ${fileStr} is not namespaced under expected ${expectedStr}";
+    in
+    {
+      # Declare assertions option (merges harmlessly with NixOS own definition)
+      options.assertions = lib.mkOption {
+        type = lib.types.listOf lib.types.unspecified;
+        default = [ ];
+        internal = true;
+      };
+      config.assertions = map (v: {
+        assertion = false;
+        message = formatViolation v;
+      }) violations;
+    };
+
+  # ================================================================
+  # 6. Output Generation
+  # ================================================================
+
+  # mkModulesOutputSingle :: Path -> String -> { modules, moduleInfos, default }
   mkModulesOutputSingle =
     modulesDir: suffix:
     let
@@ -625,20 +711,26 @@ let
       };
     in
     {
-      inherit modules;
+      inherit modules moduleInfos;
       default = defaultModule;
     };
 
-  # mkModulesOutput :: { moduleDirs :: [Path], suffix :: String } -> { nixosModules :: AttrSet }
-  # 为多个目录生成模块输出
+  # mkModulesOutput :: { moduleDirs, suffix, strictOptions? } -> { nixosModules :: AttrSet }
   mkModulesOutput =
-    { moduleDirs, suffix }:
+    {
+      moduleDirs,
+      suffix,
+      strictOptions ? false,
+    }:
     let
       # 收集所有目录的模块
       allOutputs = map (dir: mkModulesOutputSingle dir suffix) moduleDirs;
 
       # 合并所有模块
       allModules = concatLists (map (o: o.modules) allOutputs);
+
+      # 合并所有模块信息 (用于 strict validation)
+      allModuleInfos = concatLists (map (o: o.moduleInfos) allOutputs);
 
       # 检测重复的模块名
       moduleNames = map (m: m.name) allModules;
@@ -651,10 +743,11 @@ let
         else
           null;
 
-      # default 模块 - 引入所有模块
+      # default 模块 - 引入所有模块 (+ strict validation if enabled)
       defaultModule = {
         key = "default";
-        imports = map (m: m.value) allModules;
+        imports = map (m: m.value) allModules
+          ++ lib.optional strictOptions (mkStrictValidationModule allModuleInfos);
       };
     in
     {
@@ -684,6 +777,9 @@ in
     wrapNormalModule
     collectModules
     wrapModule
+    collectOptionLeaves
+    validateOptionNamespaces
+    mkStrictValidationModule
     mkModulesOutputSingle
     mkModulesOutput
     ;

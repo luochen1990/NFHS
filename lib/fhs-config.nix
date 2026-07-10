@@ -78,6 +78,17 @@ let
                 example = ".mod.nix";
               };
 
+              nixosModules.strictOptions = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = ''
+                  Validate that options declared in module files are namespaced
+                  under their module path (e.g. modules/foo/options.nix must
+                  define options under `foo.*`).
+                  Violations are reported via config.assertions.
+                '';
+              };
+
               nixosConfigurations.subdirs = lib.mkOption {
                 type = lib.types.listOf lib.types.str;
                 default = [
