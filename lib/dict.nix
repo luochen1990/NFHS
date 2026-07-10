@@ -64,13 +64,4 @@ rec {
 
   # unionForItems : Dict k v -> (k -> v -> Dict k' v') -> Dict k' v'
   unionForItems = d: f: foldl' (a: b: a // b) { } (map (k: f k d.${k}) (attrNames d));
-
-  # attrItems : Dict k v -> [(k, v)]
-  # similar to toList in Haskell, and lib.attrsToList in nix
-  attrItems =
-    attrs:
-    map (k: {
-      k = k;
-      v = attrs.${k};
-    }) (builtins.attrNames attrs);
 }
