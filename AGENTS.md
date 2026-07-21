@@ -273,7 +273,7 @@ Typical flake.nix for users (showing common options):
   outputs = inputs@{ flake-fhs, ... }:
     flake-fhs.lib.mkFlake { inherit inputs; } {
       # Optional: Explicitly specify systems (flake-parts style)
-      systems = [ "x86_64-linux" "x86_64-darwin" ];
+      systems = [ "x86_64-linux" "aarch64-darwin" ];
 
       # Optional: Nixpkgs configuration
       nixpkgs.config = {
