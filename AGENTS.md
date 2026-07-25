@@ -71,6 +71,38 @@ The framework uses `callPackage` to build packages. You can customize the `callP
 - **Granularity**: Works at both directory level (for groups of packages) and package level (sibling of `package.nix`).
 - **Usage**: Essential for Python, Perl, and other language-specific package sets, or for injecting parameters into packages.
 
+### self': Project-Internal Outputs View
+
+`self'` ("self prime", named after the flake-parts convention) is a **system-resolved, raw-scan view of the project's own outputs**. It reads as "self with the system already selected" — `self'.packages.foo` ≡ `self.packages.${system}.foo` in spirit, but see the semantic difference below.
+
+**Visibility (where `self'` is reachable):**
+
+- **`shells/*.nix` and `shells/*/default.nix`** — automatically available, since these files are called as `import file evalContext` and `evalContext.self'` is in scope:
+  ```nix
+  # shells/dev.nix
+  { pkgs, self', ... }:
+  pkgs.mkShell {
+    packages = [ self'.packages.my-cli ];
+    inputsFrom = [ self'.apps.my-tool ];  # or builtins.attrValues self'.packages
+  }
+  ```
+- **`pkgs/*/package.nix`, `apps/*/package.nix`, `checks/*.nix`** — **NOT reachable**. These are called via `callPackage` (whose scope is `pkgs`-derived and does not include `self'`), and a sibling `scope.nix` cannot inject `self'` either (see the "Caveat" below). To share logic between packages, factor it into `lib/`.
+
+**Design contract (why this is safe from infinite recursion):**
+
+- `self'.packages` / `self'.apps` / `self'.checks` are **raw scan results** from `loadScopedOutputs` — the same intermediate values used to assemble the final `flake.packages` / `flake.apps` / `flake.checks`. Each entry is the **raw derivation** (for `apps`, this is the underlying drv, not the `{ type="app"; program=...; }` wrapper — so use `inputsFrom`, not `.program`).
+- The dependency graph is a **DAG, not a cycle**: `loadScopedOutputs → self' → devShells` and `loadScopedOutputs → final flake outputs` are two independent consumers of the same scan.
+- This is structurally stronger than flake-parts' `self'` (which points to the *final* flake outputs and relies on lazy evaluation to avoid the self-reference loop). flake-fhs's construction model makes the loop **structurally impossible**.
+
+**Caveat — `scope.nix` cannot consume `self'`:**
+
+`self'` itself is built from a `baseCtx` (evalContext *without* `self'`) to break the self-reference. Therefore a `scope.nix` that reads `context.self'` will hit `attribute 'self'' missing` during `self'`'s own construction. **Only consume `self'` from `shells/*.nix`** (which receive the full `evalContext` after `self'` is bound); never reference `self'` inside `scope.nix` or `package.nix`.
+
+**What's intentionally NOT exposed on `self'`:**
+
+- **`devShells`** — exposing it would re-introduce the cycle hazard (devShells are user-defined functions, not scanned outputs). To share logic between shells, factor common code into `lib/`.
+- **`nixosConfigurations` / `nixosModules` / `templates`** — these are not derivation-valued, and the primary use case for `self'` is feeding `mkShell.inputsFrom` / `packages`.
+
 
 ### Key Components
 
