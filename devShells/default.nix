@@ -3,7 +3,7 @@
 pkgs.mkShell {
   packages = [
     pkgs.just
-    pkgs.nixfmt-classic
+    pkgs.nixfmt
     pkgs.deadnix
     pkgs.statix
   ];
