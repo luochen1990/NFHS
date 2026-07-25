@@ -61,32 +61,39 @@ let
                 description = "Packages directories";
               };
 
-              nixosModules.subdirs = lib.mkOption {
-                type = lib.types.listOf lib.types.str;
-                default = [
-                  "modules"
-                  "nixosModules"
-                ];
-                apply = trimPathList;
-                description = "NixOS modules directories";
-              };
+              nixosModules = {
+                subdirs = lib.mkOption {
+                  type = lib.types.listOf lib.types.str;
+                  default = [
+                    "modules"
+                    "nixosModules"
+                  ];
+                  apply = trimPathList;
+                  description = "NixOS modules directories";
+                };
 
-              nixosModules.suffix = lib.mkOption {
-                type = lib.types.str;
-                default = ".nix";
-                description = "File suffix for modules to auto-discover and import";
-                example = ".mod.nix";
-              };
+                guardedSuffix = lib.mkOption {
+                  type = lib.types.str;
+                  default = ".cfg.nix";
+                  description = ''
+                    File suffix for guarded config files. Files matching this suffix
+                    are automatically collected within a directory module's scope and
+                    wrapped with `mkIf (enable-chain)`. The enable-chain is the AND of
+                    all ancestor module enables and the module's own enable.
+                  '';
+                  example = ".guarded.nix";
+                };
 
-              nixosModules.strictOptions = lib.mkOption {
-                type = lib.types.bool;
-                default = false;
-                description = ''
-                  Validate that options declared in module files are namespaced
-                  under their module path (e.g. modules/foo/options.nix must
-                  define options under `foo.*`).
-                  Violations are reported via config.assertions.
-                '';
+                strictOptions = lib.mkOption {
+                  type = lib.types.bool;
+                  default = false;
+                  description = ''
+                    Validate that options declared in module files are namespaced
+                    under their module path (e.g. modules/foo/default.nix must
+                    define options under `foo.*`).
+                    Violations are reported via config.assertions.
+                  '';
+                };
               };
 
               nixosConfigurations.subdirs = lib.mkOption {

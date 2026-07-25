@@ -15,7 +15,7 @@ The framework implements an automatic mapping from directory structure to flake 
 | Subdirectories (Aliases) | File Pattern | Special Files | Recursive | Generated Output | Nix Command |
 |---|---|---|:---:|---|---|
 | `packages` (`pkgs`) | `<name>.nix` or `<name>/package.nix` | `scope.nix` | ✅ | `packages.<system>.<name>` | `nix build .#<name>` |
-| `nixosModules` (`modules`) | `<name>/...` | `options.nix`, `default.nix` | ✅ | `nixosModules.<name>` | - |
+| `nixosModules` (`modules`) | `<name>/default.nix` or `<name>.nix` | `*.cfg.nix` | ✅ | `nixosModules.<name>` | - |
 | `nixosConfigurations` (`hosts`) | `<name>/configuration.nix` | `default.nix` | ✅ | `nixosConfigurations.<name>` | `nixos-rebuild --flake .#<name>` |
 | `apps` | `<name>.nix` or `<name>/package.nix` | `scope.nix` | ✅ | `apps.<system>.<name>` | `nix run .#<name>` |
 | `devShells` (`shells`) | `<name>.nix` | `default.nix` | ✅ | `devShells.<system>.<name>` | `nix develop .#<name>` |
@@ -94,94 +94,90 @@ The framework uses `callPackage` to build packages. You can customize the `callP
 
 ## Module System Architecture
 
-The framework implements a module system with **three mutually exclusive module types**:
+The framework implements a **unified module system** based on `default.nix` as the single entry point. There are no "module types" — only **guarded config files** (`.cfg.nix`) as a file-level attribute.
 
-### Module Types
+### Core Concepts
 
 ```
-Module Types (Mutually Exclusive)
+Module entry points (unified, no type distinction)
 │
-├─ Guarded Directory Module
-│  ├─ Identifier: Directory contains options.nix
-│  ├─ Features:
-│  │  ├─ Auto-generates enable option
-│  │  ├─ Config files wrapped with mkIf enable
-│  │  └─ Nested modules check ALL parent enables
-│  ├─ Constraints: Cannot have default.nix (conflict error)
-│  └─ Use Case: Optional feature modules
-│
-├─ Traditional Directory Module
-│  ├─ Identifier: Directory contains default.nix (no options.nix)
-│  ├─ Features: Direct export, no enable mechanism
-│  ├─ Constraints: No nesting (subdirs with default.nix are NOT recognized)
-│  └─ Use Case: Configuration sets, complex modules
+├─ Directory Module
+│  ├─ Identifier: Directory contains default.nix
+│  ├─ Entry: default.nix (options + base config)
+│  ├─ Enable injection: ALWAYS injects <modPath>.enable (if not manually defined)
+│  │  This guarantees the enable-chain is self-consistent.
+│  └─ Nesting: supported; child modules' enable-chain includes all ancestor modules' enables
 │
 └─ Single File Module
-   ├─ Identifier: Standalone file matching suffix (default: .nix)
-   ├─ Features: Direct export, no enable mechanism
+   ├─ Identifier: Standalone `.nix` file, not inside any directory module's subtree
+   ├─ No enable injection, no enable-chain
    └─ Use Case: Simple modules
+
+Guarded config file (file-level attribute, not a module type)
+│
+└─ .cfg.nix (configurable via layout.nixosModules.guardedSuffix)
+   ├─ Must reside within a directory module's subtree
+   ├─ Content is wrapped with mkIf (enable-chain)
+   └─ Auto-imported by the enclosing directory module
+```
+
+### enable-chain (precise definition)
+
+A `.cfg.nix`'s mkIf condition = the AND of **all ancestor module enables** (directories with `default.nix` on the path) AND **the enclosing module's own enable**.
+
+Intermediate directories without `default.nix` (pure path organization) do NOT participate in the enable-chain, but still contribute modPath segments.
+
+Example:
+```
+modules/
+└── network/              # has default.nix → module, in chain
+    ├── default.nix       # injects network.enable
+    ├── net.cfg.nix       # mkIf config.network.enable
+    └── services/         # no default.nix → path segment, NOT in chain
+        └── web/           # has default.nix → module, in chain
+            ├── default.nix  # injects network.services.web.enable
+            └── web.cfg.nix  # mkIf (config.network.enable && config.network.services.web.enable)
 ```
 
 ### Module Loading Rules
-1. **Guarded Modules**: Directories with `options.nix`
-   - Auto-generates `enable` option if not manually defined
-   - Config files (matching suffix, default `.nix`) are **recursively collected** from:
-     - Current directory
-     - All non-guarded subdirectories (regardless of `default.nix` presence)
-   - All collected config files are wrapped with `mkIf enable`
-   - Nested guarded modules check ALL parent enables (not just immediate parent)
-   - **Conflict**: Cannot have both `options.nix` and `default.nix` in the same directory
 
-2. **Traditional Modules**: Directories with `default.nix` (no `options.nix`)
-   - Directly exported, no enable mechanism
-   - **No nesting**: Subdirectories with `default.nix` are NOT recognized as modules
+1. **Directory Modules**: Directories with `default.nix`
+   - `default.nix` config is **always applied** (no mkIf wrapping)
+   - `<modPath>.enable` is auto-injected (if not manually defined) — this is required for enable-chain consistency
+   - `.cfg.nix` files within the module's scope are collected (recursively, stopping at sub-module boundaries) and wrapped with `mkIf (enable-chain)`
+   - Nested directory modules' `.cfg.nix` checks ALL ancestor module enables
 
-3. **Single File Modules**: Standalone files matching the configured suffix (default: `.nix`)
-   - Directly exported, no enable mechanism
-   - Found recursively in all non-guarded, non-traditional directories
+2. **Single File Modules**: Standalone `.nix` files that are **not inside any directory module's subtree**
+   - Directly exported, no enable injection
+   - Files inside a directory module's subtree (except `.cfg.nix`) are managed by the module's `default.nix` and are NOT auto-discovered
 
 ### Module File Suffix Configuration
-The file suffix for auto-discovering config files and single-file modules is configurable:
+The guarded config suffix is configurable:
 ```nix
 # flake.nix
 flake-fhs.lib.mkFlake { inherit inputs; } {
   layout.nixosModules = {
     subdirs = [ "modules" ];
-    suffix = ".mod.nix";  # Custom suffix (default: ".nix")
+    guardedSuffix = ".guarded.nix";  # Custom suffix for guarded config files (default: ".cfg.nix")
   };
 }
 ```
-This allows keeping helper `.nix` files that shouldn't be auto-imported alongside config files.
 
 ### Module Output Structure
 - **Individual Module Outputs**: Each module generates a single output:
-  - `nixosModules.<modPath>`: The complete module (options + config)
-  - Example: `modules/services/web-server/` → `nixosModules.services.web-server`
+  - `nixosModules.<modPath>`: The complete module (default.nix + collected .cfg.nix)
+  - Example: `modules/services/web-server/` → `nixosModules.services/web-server`
 
 - **Default Module Export**: `nixosModules.default` includes ALL modules:
-  - All guarded modules (with their enable guards)
-  - All traditional modules
+  - All directory modules (with their enable injection and .cfg.nix guards)
   - All single file modules
   - Allows importing all modules with: `imports = [ flake.nixosModules.default ];`
-
-### Nested Guarded Modules
-When guarded modules are nested, child modules' configs check ALL parent enables:
-```
-modules/
-└── network/              # network.enable
-    ├── options.nix
-    ├── config.nix
-    └── services/
-        └── web/          # network.enable && network.services.web.enable
-            ├── options.nix
-            └── config.nix
-```
 
 ### Strict Options Validation
 
 By default, option namespace is not enforced. Enable `layout.nixosModules.strictOptions` to validate that each option's namespace matches its directory path:
-- `modules/foo/options.nix` should define options under `options.foo.*`
-- `modules/foo/bar/options.nix` should define options under `options.foo.bar.*`
+- `modules/foo/default.nix` should define options under `options.foo.*`
+- `modules/foo/bar/default.nix` should define options under `options.foo.bar.*`
 
 When enabled, violations are reported via `config.assertions` at system evaluation time.
 

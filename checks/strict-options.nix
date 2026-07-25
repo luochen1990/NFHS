@@ -2,51 +2,51 @@
 #
 # Test: strictOptions post-evaluation validation
 #
-# Tests the namespace validation infrastructure:
-#   - collectOptionLeaves: walks evaluated options tree
-#   - validateOptionNamespaces: identifies violations
-#   - mkStrictValidationModule: produces assertions
-#   - mkModulesOutput integration (enabled/disabled)
+# 测试 namespace 校验基础设施:
+#   - collectOptionLeaves: 遍历已求值的 options 树
+#   - validateOptionNamespaces: 识别违规
+#   - mkStrictValidationModule: 生成 assertions
+#   - mkModulesOutput 集成 (启用/禁用)
+#
+# 新结构: options 写在目录模块的 default.nix 里（不再是 options.nix 信号文件）
 #
 {
   pkgs,
   lib,
   self,
   fhs-modules,
+  mkCheck,
   ...
 }:
 
 let
   # ================================================================
-  # Test fixtures: directory structures in the Nix store
+  # Test fixtures: 新结构，options 写在 default.nix 里
   # ================================================================
-
   testSource = pkgs.runCommand "strict-test-source" { } ''
     mkdir -p $out/modules/foo
     mkdir -p $out/modules/wrongns
     mkdir -p $out/modules/nested/child
     mkdir -p $out/modules/empty
 
-    # foo/options.nix: correctly namespaced under foo
-    cat > $out/modules/foo/options.nix << 'EOF'
+    # foo/default.nix: 正确命名空间 (options.foo.*)
+    cat > $out/modules/foo/default.nix << 'EOF'
     { lib, ... }: {
       options.foo = {
-        enable = lib.mkEnableOption "foo";
         setting = lib.mkOption { type = lib.types.str; default = "hello"; };
         result = lib.mkOption { type = lib.types.str; default = ""; };
       };
     }
     EOF
-
-    # foo/config.nix: config referencing options (uses lib)
-    cat > $out/modules/foo/config.nix << 'EOF'
+    # foo/config.cfg.nix: guarded config
+    cat > $out/modules/foo/config.cfg.nix << 'EOF'
     { config, lib, ... }: {
       config.foo.result = lib.mkIf config.foo.enable config.foo.setting;
     }
     EOF
 
-    # wrongns/options.nix: INCORRECTLY namespaced (defines options.bad, not options.wrongns)
-    cat > $out/modules/wrongns/options.nix << 'EOF'
+    # wrongns/default.nix: 错误命名空间 (定义 options.bad 而非 options.wrongns)
+    cat > $out/modules/wrongns/default.nix << 'EOF'
     { lib, ... }: {
       options.bad = {
         enable = lib.mkEnableOption "bad";
@@ -54,8 +54,8 @@ let
     }
     EOF
 
-    # nested/child/options.nix: correctly namespaced under nested.child
-    cat > $out/modules/nested/child/options.nix << 'EOF'
+    # nested/child/default.nix: 正确嵌套命名空间 (options.nested.child.*)
+    cat > $out/modules/nested/child/default.nix << 'EOF'
     { lib, ... }: {
       options.nested.child = {
         enable = lib.mkEnableOption "child";
@@ -63,8 +63,8 @@ let
     }
     EOF
 
-    # empty/options.nix: guarded module with only auto-injected enable (no user options)
-    cat > $out/modules/empty/options.nix << 'EOF'
+    # empty/default.nix: 空目录模块 (只有自动注入的 enable)
+    cat > $out/modules/empty/default.nix << 'EOF'
     { lib, ... }: {
     }
     EOF
@@ -83,11 +83,10 @@ let
   # ================================================================
   # Test 1: collectOptionLeaves — walks evaluated options tree
   # ================================================================
-  # Pass paths directly so module system tracks declaration files
   collectTestEval = lib.evalModules {
     modules = [
-      (modulesRoot + "/foo/options.nix")
-      (modulesRoot + "/wrongns/options.nix")
+      (modulesRoot + "/foo/default.nix")
+      (modulesRoot + "/wrongns/default.nix")
     ];
   };
 
@@ -99,9 +98,9 @@ let
   # ================================================================
   validationEval = lib.evalModules {
     modules = [
-      (modulesRoot + "/foo/options.nix")
-      (modulesRoot + "/wrongns/options.nix")
-      (modulesRoot + "/nested/child/options.nix")
+      (modulesRoot + "/foo/default.nix")
+      (modulesRoot + "/wrongns/default.nix")
+      (modulesRoot + "/nested/child/default.nix")
     ];
   };
 
@@ -113,8 +112,8 @@ let
   # ================================================================
   assertionsEval = lib.evalModules {
     modules = [
-      (modulesRoot + "/foo/options.nix")
-      (modulesRoot + "/wrongns/options.nix")
+      (modulesRoot + "/foo/default.nix")
+      (modulesRoot + "/wrongns/default.nix")
       (fhs-modules.mkStrictValidationModule manualInfos)
     ];
   };
@@ -127,7 +126,7 @@ let
   # ================================================================
   crossNsSource = pkgs.runCommand "cross-ns-test" { } ''
     mkdir -p $out/modules/foo
-    cat > $out/modules/foo/options.nix << 'EOF'
+    cat > $out/modules/foo/default.nix << 'EOF'
     { lib, ... }: {
       options.foo.enable = lib.mkEnableOption "foo";
       options.services.integration = lib.mkOption {
@@ -144,7 +143,7 @@ let
 
   crossNsEval = lib.evalModules {
     modules = [
-      (crossNsSource + "/modules/foo/options.nix")
+      (crossNsSource + "/modules/foo/default.nix")
       (fhs-modules.mkStrictValidationModule crossNsInfos)
     ];
   };
@@ -156,7 +155,7 @@ let
   # ================================================================
   noStrictOutput = fhs-modules.mkModulesOutput {
     moduleDirs = [ modulesRoot ];
-    suffix = ".nix";
+    guardedSuffix = ".cfg.nix";
     strictOptions = false;
   };
 
@@ -171,7 +170,7 @@ let
   # ================================================================
   strictOutput = fhs-modules.mkModulesOutput {
     moduleDirs = [ modulesRoot ];
-    suffix = ".nix";
+    guardedSuffix = ".cfg.nix";
     strictOptions = true;
   };
 
@@ -182,18 +181,17 @@ let
   strictFailed = builtins.filter (a: !a.assertion) (strictEval.config.assertions or [ ]);
 
   # ================================================================
-  # Compute test results (PASS/FAIL strings, no special chars)
+  # Compute test results
   # ================================================================
   has = loc: locs: builtins.any (l: l == loc) locs;
 
   checks = {
     # --- Test 1: collectOptionLeaves ---
+    # foo 有 foo.setting 和 foo.result（直接 import options，没经过 wrap，所以无 auto enable）
+    # wrongns 有 bad.enable
     t1_count =
-      if builtins.length collectLeaves == 4 then "PASS"
-      else "FAIL: expected 4 leaves got ${toString (builtins.length collectLeaves)}";
-    t1_foo_enable =
-      if has [ "foo" "enable" ] leafLocs then "PASS"
-      else "FAIL: foo.enable not found";
+      if builtins.length collectLeaves == 3 then "PASS"
+      else "FAIL: expected 3 leaves got ${toString (builtins.length collectLeaves)}";
     t1_foo_setting =
       if has [ "foo" "setting" ] leafLocs then "PASS"
       else "FAIL: foo.setting not found";
@@ -203,7 +201,7 @@ let
 
     # --- Test 2: validateOptionNamespaces ---
     t2_foo_ok =
-      if !(has [ "foo" "enable" ] violationLocs) && !(has [ "foo" "setting" ] violationLocs) then "PASS"
+      if !(has [ "foo" "setting" ] violationLocs) then "PASS"
       else "FAIL: foo should not be in violations";
     t2_nested_ok =
       if !(has [ "nested" "child" "enable" ] violationLocs) then "PASS"
@@ -244,46 +242,5 @@ let
       else "FAIL: expected 1 violation with strictOptions got ${toString (builtins.length strictFailed)}";
   };
 
-  checkValues = builtins.attrValues checks;
-  anyFail = builtins.any (v: builtins.match "FAIL.*" v != null) checkValues;
-
 in
-pkgs.runCommand "check-strict-options"
-  { inherit checkValues; }
-  ''
-    echo "=== Test 1: collectOptionLeaves ==="
-    echo "  ${checks.t1_count}"
-    echo "  ${checks.t1_foo_enable}"
-    echo "  ${checks.t1_foo_setting}"
-    echo "  ${checks.t1_bad_enable}"
-
-    echo ""
-    echo "=== Test 2: validateOptionNamespaces ==="
-    echo "  ${checks.t2_foo_ok}"
-    echo "  ${checks.t2_nested_ok}"
-    echo "  ${checks.t2_bad_caught}"
-    echo "  ${checks.t2_count}"
-
-    echo ""
-    echo "=== Test 3: mkStrictValidationModule ==="
-    echo "  ${checks.t3_count}"
-    echo "  ${checks.t3_message}"
-
-    echo ""
-    echo "=== Test 4: Cross-namespace flagged ==="
-    echo "  ${checks.t4_cross_flagged}"
-
-    echo ""
-    echo "=== Test 5: Disabled by default ==="
-    echo "  ${checks.t5_no_assertions}"
-
-    echo ""
-    echo "=== Test 6: Enabled via mkModulesOutput ==="
-    echo "  ${checks.t6_active}"
-
-    echo ""
-    ${lib.optionalString anyFail "echo '=== SOME TESTS FAILED ==='; exit 1"}
-
-    echo "=== All tests passed ==="
-    touch $out
-  ''
+mkCheck "strict-options" checks

@@ -1,6 +1,8 @@
 { ... }:
 
 {
+  # This config is only applied if tweaks.enable is true
+
   # Enable flakes and nix-command
   nix.settings.experimental-features = [
     "nix-command"

@@ -1,7 +1,7 @@
 # © Copyright 2025 罗宸 (luochen1990@gmail.com, https://lambda.lc)
 #
-# Test: Module collection with all three types
-# - Verifies all three module types coexist correctly
+# Test: Module collection with all module kinds
+# - Verifies directory modules (with/without .cfg.nix) and single file modules coexist
 # - Verifies mkModulesOutput generates correct outputs
 # - Verifies default module includes all modules
 #
@@ -10,183 +10,82 @@
   lib,
   self,
   fhs-modules,
+  mkCheck,
   ...
 }:
 
 let
-  # Create test directory with all three module types:
-  # modules/
-  # ├── guarded-app/           <- Guarded module
-  # │   ├── options.nix
-  # │   └── config.nix
-  # ├── traditional-set/       <- Traditional module
-  # │   └── default.nix
-  # └── simple.nix             <- Single file module
   testSource = pkgs.runCommand "test-source" { } ''
     mkdir -p $out/modules/guarded-app
     mkdir -p $out/modules/traditional-set
 
-    # Guarded module
-    cat > $out/modules/guarded-app/options.nix << 'EOF'
-    { lib, ... }:
-    {
-      options.guarded-app.setting = lib.mkOption {
-        type = lib.types.str;
-        default = "guarded-default";
-      };
-      options.guarded-app.active = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-      };
+    cat > $out/modules/guarded-app/default.nix << 'EOF'
+    { lib, ... }: {
+      options.guarded-app.setting = lib.mkOption { type = lib.types.str; default = "guarded-default"; };
+      options.guarded-app.active = lib.mkOption { type = lib.types.bool; default = false; };
     }
     EOF
-    cat > $out/modules/guarded-app/config.nix << 'EOF'
-    { config, ... }:
-    {
-      config.guarded-app.active = true;
-    }
+    cat > $out/modules/guarded-app/config.cfg.nix << 'EOF'
+    { config, ... }: { config.guarded-app.active = true; }
     EOF
 
-    # Traditional module
     cat > $out/modules/traditional-set/default.nix << 'EOF'
-    { lib, ... }:
-    {
-      options.traditional-set.value = lib.mkOption {
-        type = lib.types.str;
-        default = "traditional-default";
-      };
-      options.traditional-set.active = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-      };
+    { lib, ... }: {
+      options.traditional-set.value = lib.mkOption { type = lib.types.str; default = "traditional-default"; };
+      options.traditional-set.active = lib.mkOption { type = lib.types.bool; default = false; };
       config.traditional-set.active = true;
     }
     EOF
 
-    # Single file module
     cat > $out/modules/simple.nix << 'EOF'
-    { lib, ... }:
-    {
-      options.simple.feature = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-      };
-      options.simple.active = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-      };
+    { lib, ... }: {
+      options.simple.feature = lib.mkOption { type = lib.types.bool; default = true; };
+      options.simple.active = lib.mkOption { type = lib.types.bool; default = false; };
       config.simple.active = true;
     }
     EOF
   '';
 
-  # Collect modules
-  moduleInfos = fhs-modules.collectModules (testSource + "/modules") ".nix";
+  moduleInfos = fhs-modules.collectModules (testSource + "/modules") ".cfg.nix";
 
-  # Count modules by type
-  guardedCount = lib.length (lib.filter (m: m.moduleType == "guarded") moduleInfos);
-  traditionalCount = lib.length (lib.filter (m: m.moduleType == "traditional") moduleInfos);
-  singleCount = lib.length (lib.filter (m: m.moduleType == "single") moduleInfos);
-  totalCount = lib.length moduleInfos;
+  dirWithCfg = lib.length (lib.filter (m: m.kind == "directory" && m.cfgFiles != [ ]) moduleInfos);
+  dirWithoutCfg = lib.length (lib.filter (m: m.kind == "directory" && m.cfgFiles == [ ]) moduleInfos);
+  singleCount = lib.length (lib.filter (m: m.kind == "file") moduleInfos);
 
-  # Generate outputs
   modulesOutput = fhs-modules.mkModulesOutput {
     moduleDirs = [ (testSource + "/modules") ];
-    suffix = ".nix";
+    guardedSuffix = ".cfg.nix";
   };
 
-  # Get all module names
   moduleNames = builtins.attrNames (builtins.removeAttrs modulesOutput.nixosModules [ "default" ]);
 
-  # Evaluate with all modules (default)
   evalAll = lib.evalModules {
     modules = [
       modulesOutput.nixosModules.default
-      {
-        config.guarded-app.enable = true;
-      }
+      { config.guarded-app.enable = true; }
     ];
   };
 
-  # Test checks
+  evalDisabled = lib.evalModules {
+    modules = [
+      modulesOutput.nixosModules.default
+      { config.guarded-app.enable = false; }
+    ];
+  };
+
   checks = {
-    # Test 1: Verify module counts
-    testCounts =
-      if guardedCount != 1 then
-        throw "Expected 1 guarded module, got ${toString guardedCount}"
-      else if traditionalCount != 1 then
-        throw "Expected 1 traditional module, got ${toString traditionalCount}"
-      else if singleCount != 1 then
-        throw "Expected 1 single file module, got ${toString singleCount}"
-      else if totalCount != 3 then
-        throw "Expected 3 total modules, got ${toString totalCount}"
-      else
-        true;
-
-    # Test 2: Verify output names
-    testOutputNames =
-      if !(lib.elem "guarded-app" moduleNames) then
-        throw "Expected 'guarded-app' in outputs, got: ${builtins.concatStringsSep ", " moduleNames}"
-      else if !(lib.elem "traditional-set" moduleNames) then
-        throw "Expected 'traditional-set' in outputs, got: ${builtins.concatStringsSep ", " moduleNames}"
-      else if !(lib.elem "simple" moduleNames) then
-        throw "Expected 'simple' in outputs, got: ${builtins.concatStringsSep ", " moduleNames}"
-      else
-        true;
-
-    # Test 3: Verify default module exists
-    testDefaultModule =
-      if !(builtins.hasAttr "default" modulesOutput.nixosModules) then
-        throw "Expected 'default' in nixosModules"
-      else
-        true;
-
-    # Test 4: Verify traditional module always active
-    testTraditionalActive =
-      if evalAll.config.traditional-set.active != true then
-        throw "Traditional module should always be active"
-      else
-        true;
-
-    # Test 5: Verify single file module always active
-    testSingleActive =
-      if evalAll.config.simple.active != true then
-        throw "Single file module should always be active"
-      else
-        true;
-
-    # Test 6: Verify guarded module active when enabled
-    testGuardedActive =
-      if evalAll.config.guarded-app.active != true then
-        throw "Guarded module should be active when enabled"
-      else
-        true;
-
-    # Test 7: Verify guarded module NOT active when disabled
-    testGuardedInactive =
-      let
-        evalDisabled = lib.evalModules {
-          modules = [
-            modulesOutput.nixosModules.default
-            {
-              config.guarded-app.enable = false;
-            }
-          ];
-        };
-      in
-      if evalDisabled.config.guarded-app.active then
-        throw "Guarded module should NOT be active when disabled"
-      else
-        true;
+    t1_counts =
+      if dirWithCfg == 1 && dirWithoutCfg == 1 && singleCount == 1 then "PASS"
+      else "FAIL: expected (1,1,1) got (${toString dirWithCfg},${toString dirWithoutCfg},${toString singleCount})";
+    t2_outputNames =
+      if lib.elem "guarded-app" moduleNames && lib.elem "traditional-set" moduleNames && lib.elem "simple" moduleNames then "PASS"
+      else "FAIL: got ${builtins.toJSON moduleNames}";
+    t3_defaultExists = if builtins.hasAttr "default" modulesOutput.nixosModules then "PASS" else "FAIL";
+    t4_traditionalActive = if evalAll.config.traditional-set.active then "PASS" else "FAIL";
+    t5_singleActive = if evalAll.config.simple.active then "PASS" else "FAIL";
+    t6_guardedActive = if evalAll.config.guarded-app.active then "PASS" else "FAIL";
+    t7_guardedInactive = if !evalDisabled.config.guarded-app.active then "PASS" else "FAIL";
   };
 
 in
-pkgs.runCommand "check-module-collection"
-  {
-    # Force evaluation of all checks (Nix is lazy — unreferenced let bindings are never evaluated)
-    checkResults = builtins.toJSON checks;
-  }
-  ''
-    echo "=== module-collection checks forced ==="
-    touch $out
-  ''
+mkCheck "module-collection" checks
