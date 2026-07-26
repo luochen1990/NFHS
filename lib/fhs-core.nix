@@ -92,19 +92,32 @@ let
           // (userCtx.specialArgs or { });
 
           scope = mergedLib.mkScope pkgs;
+
+          # evalContext without self' — used as the input for the raw scan, so self'
+          # cannot reference itself (keeps the dependency graph a DAG, not a cycle).
+          baseCtx = {
+            inherit
+              self
+              system
+              pkgs
+              specialArgs
+              inputs
+              scope
+              ;
+            lib = mergedLib;
+          } // (removeAttrs userCtx [ "specialArgs" ]);
+
+          # self': system-resolved raw-scan view of the project's own packages/apps/checks.
+          #
+          # Built directly from loadScopedOutputs (the same intermediate used to assemble
+          # the final flake outputs), so consuming self' inside devShells cannot form a
+          # self-reference loop. devShells is intentionally NOT exposed — it is user code,
+          # not a scan result, and exposing it would re-introduce the cycle hazard.
+          self' = genAttrs [ "packages" "apps" "checks" ] (
+            k: listToAttrs (flakeFhsLib.loadScopedOutputs args roots layout.${k}.subdirs baseCtx)
+          );
         in
-        {
-          inherit
-            self
-            system
-            pkgs
-            specialArgs
-            inputs
-            scope
-            ;
-          lib = mergedLib;
-        }
-        // (removeAttrs userCtx [ "specialArgs" ]);
+        baseCtx // { inherit self'; };
 
       # Per-system output builder
       # eachSystem : (SystemContext -> a) -> Dict System a
@@ -182,12 +195,13 @@ let
 
       formatter = (flakeFhsLib.mkFormatterOutput args { inherit eachSystem; }).formatter;
 
+      # Flatten self' (packages ++ apps ++ checks) into a list of derivations.
       allProjectDrvs =
         evalContext:
         let
-          load = subdir: map (i: i.value) (flakeFhsLib.loadScopedOutputs args roots subdir evalContext);
+          inherit (evalContext.self') packages apps checks;
         in
-        load layout.packages.subdirs ++ load layout.apps.subdirs ++ load layout.checks.subdirs;
+        builtins.attrValues packages ++ builtins.attrValues apps ++ builtins.attrValues checks;
 
       devShells =
         (flakeFhsLib.mkShellsOutput args {
